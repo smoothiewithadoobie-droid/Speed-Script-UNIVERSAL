@@ -1,5 +1,5 @@
 --!strict
--- Utility UI (clean layout): Speed(8-500) + Jump + Resets + Teleport/Noclip (rebinds)
+-- Smoothies Script (clean layout): Speed(8-500) + Jump + Resets + Teleport/Noclip (rebinds)
 -- + Give BTools + Dev Portal + Player Boxes (ESP) + Add/Remove Hitboxes (client)
 -- Place as LocalScript in StarterPlayer -> StarterPlayerScripts
 
@@ -42,7 +42,7 @@ end
 
 -- ===== UI ROOT (simple & roomy) =====
 local gui = Instance.new("ScreenGui")
-gui.Name = "UtilityUI"
+gui.Name = "SmoothiesScriptUI" -- was "UtilityUI"
 gui.IgnoreGuiInset = true
 gui.ResetOnSpawn = false
 gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
@@ -70,13 +70,13 @@ Instance.new("UICorner", header).CornerRadius = UDim.new(0,12)
 
 local title = Instance.new("TextLabel")
 title.BackgroundTransparency = 1
-title.Text = "Utility"
+title.Text = "Smoothies Script" -- was "Utility"
 title.Font = Enum.Font.GothamBold
 title.TextSize = 20
 title.TextColor3 = Color3.new(1,1,1)
 title.TextXAlignment = Enum.TextXAlignment.Left
 title.Position = UDim2.fromOffset(14, 10)
-title.Size = UDim2.fromOffset(200, 24)
+title.Size = UDim2.fromOffset(260, 24)
 title.Parent = header
 
 local function topBtn(txt, offsetX, bg)
