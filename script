@@ -1,0 +1,242 @@
+-- Speed Slider GUI (drop-in, simple/robust)
+-- LocalScript in StarterPlayer > StarterPlayerScripts
+
+local Players = game:GetService("Players")
+local UIS = game:GetService("UserInputService")
+local player = Players.LocalPlayer
+
+-- === CONFIG ===
+local MIN_SPEED = 8
+local MAX_SPEED = 100
+local DEFAULT_SPEED = 16
+
+-- === UI ===
+local gui = Instance.new("ScreenGui")
+gui.Name = "SpeedUI"
+gui.IgnoreGuiInset = true
+gui.ResetOnSpawn = false
+gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+gui.Parent = player:WaitForChild("PlayerGui")
+
+local panel = Instance.new("Frame")
+panel.Size = UDim2.fromOffset(260, 110)
+panel.Position = UDim2.fromOffset(40, 120)
+panel.BackgroundColor3 = Color3.fromRGB(24,24,24)
+panel.BackgroundTransparency = 0.1
+panel.BorderSizePixel = 0
+panel.Parent = gui
+
+local corner = Instance.new("UICorner", panel)
+corner.CornerRadius = UDim.new(0,12)
+local stroke = Instance.new("UIStroke", panel)
+stroke.Thickness = 1.5
+stroke.Transparency = 0.3
+
+local title = Instance.new("TextLabel")
+title.BackgroundTransparency = 1
+title.Text = "Player Speed"
+title.Font = Enum.Font.GothamBold
+title.TextSize = 18
+title.TextColor3 = Color3.new(1,1,1)
+title.TextXAlignment = Enum.TextXAlignment.Left
+title.Position = UDim2.fromOffset(14,10)
+title.Size = UDim2.fromOffset(200,24)
+title.Parent = panel
+
+local valueLabel = Instance.new("TextLabel")
+valueLabel.BackgroundTransparency = 1
+valueLabel.Text = tostring(DEFAULT_SPEED)
+valueLabel.Font = Enum.Font.Gotham
+valueLabel.TextSize = 16
+valueLabel.TextColor3 = Color3.fromRGB(210,210,210)
+valueLabel.TextXAlignment = Enum.TextXAlignment.Right
+valueLabel.Position = UDim2.new(1,-70,0,10)
+valueLabel.Size = UDim2.fromOffset(56,24)
+valueLabel.Parent = panel
+
+-- Slider container
+local bar = Instance.new("Frame")
+bar.Name = "Bar"
+bar.Size = UDim2.fromOffset(216, 10)
+bar.Position = UDim2.fromOffset(22, 56)
+bar.BackgroundColor3 = Color3.fromRGB(50,50,50)
+bar.BorderSizePixel = 0
+bar.Parent = panel
+local barCorner = Instance.new("UICorner", bar)
+barCorner.CornerRadius = UDim.new(0,5)
+
+-- Fill inside bar
+local fill = Instance.new("Frame")
+fill.Name = "Fill"
+fill.AnchorPoint = Vector2.new(0, 0.5)
+fill.Position = UDim2.fromScale(0, 0.5)
+fill.Size = UDim2.fromScale(0, 1)
+fill.BackgroundColor3 = Color3.fromRGB(50,200,120)
+fill.BorderSizePixel = 0
+fill.Parent = bar
+local fillCorner = Instance.new("UICorner", fill)
+fillCorner.CornerRadius = UDim.new(0,5)
+
+-- Knob INSIDE the bar (uses scale, not absolute pixels)
+local knob = Instance.new("ImageButton")
+knob.Name = "Knob"
+knob.AnchorPoint = Vector2.new(0.5, 0.5)
+knob.Position = UDim2.fromScale(0, 0.5) -- set later
+knob.Size = UDim2.fromOffset(16,16)
+knob.BackgroundColor3 = Color3.fromRGB(230,230,230)
+knob.BorderSizePixel = 0
+knob.Parent = bar
+local knobCorner = Instance.new("UICorner", knob)
+knobCorner.CornerRadius = UDim.new(1,0)
+local knobStroke = Instance.new("UIStroke", knob)
+knobStroke.Thickness = 1
+knobStroke.Transparency = 0.2
+
+-- Reset
+local resetBtn = Instance.new("TextButton")
+resetBtn.Text = "Reset"
+resetBtn.Font = Enum.Font.GothamBold
+resetBtn.TextSize = 14
+resetBtn.TextColor3 = Color3.new(1,1,1)
+resetBtn.AutoButtonColor = true
+resetBtn.Size = UDim2.fromOffset(70, 28)
+resetBtn.Position = UDim2.fromOffset(22, 72)
+resetBtn.BackgroundColor3 = Color3.fromRGB(35,125,255)
+resetBtn.BorderSizePixel = 0
+resetBtn.Parent = panel
+local resetCorner = Instance.new("UICorner", resetBtn)
+resetCorner.CornerRadius = UDim.new(0,8)
+
+-- Direct input
+local inputBox = Instance.new("TextBox")
+inputBox.PlaceholderText = "Type speed"
+inputBox.Text = ""
+inputBox.ClearTextOnFocus = false
+inputBox.Font = Enum.Font.Gotham
+inputBox.TextSize = 14
+inputBox.TextColor3 = Color3.new(1,1,1)
+inputBox.BackgroundColor3 = Color3.fromRGB(36,36,36)
+inputBox.BorderSizePixel = 0
+inputBox.Size = UDim2.fromOffset(110, 28)
+inputBox.Position = UDim2.fromOffset(134, 72)
+inputBox.Parent = panel
+local inputCorner = Instance.new("UICorner", inputBox)
+inputCorner.CornerRadius = UDim.new(0,8)
+
+-- Drag panel
+do
+	local dragging = false
+	local dragStart, startPos
+	panel.InputBegan:Connect(function(inp)
+		if inp.UserInputType == Enum.UserInputType.MouseButton1 then
+			dragging = true
+			dragStart = inp.Position
+			startPos = panel.Position
+			inp.Changed:Connect(function()
+				if inp.UserInputState == Enum.UserInputState.End then
+					dragging = false
+				end
+			end)
+		end
+	end)
+	UIS.InputChanged:Connect(function(inp)
+		if dragging and inp.UserInputType == Enum.UserInputType.MouseMovement and dragStart and startPos then
+			local delta = inp.Position - dragStart
+			panel.Position = UDim2.fromOffset(startPos.X.Offset + delta.X, startPos.Y.Offset + delta.Y)
+		end
+	end)
+end
+
+-- === SPEED/SLIDER LOGIC ===
+local function clamp(n, a, b)
+	if n < a then return a end
+	if n > b then return b end
+	return n
+end
+
+local function getHumanoid()
+	local char = player.Character or player.CharacterAdded:Wait()
+	return char:FindFirstChildOfClass("Humanoid") or char:WaitForChild("Humanoid")
+end
+
+local function applySpeed(spd)
+	local hum = getHumanoid()
+	if hum then hum.WalkSpeed = spd end
+end
+
+local function speedToAlpha(spd)
+	return (spd - MIN_SPEED) / (MAX_SPEED - MIN_SPEED)
+end
+
+local function alphaToSpeed(a)
+	return math.floor(MIN_SPEED + a * (MAX_SPEED - MIN_SPEED) + 0.5)
+end
+
+local function setUIFromAlpha(a)
+	a = clamp(a, 0, 1)
+	fill.Size = UDim2.fromScale(a, 1)
+	knob.Position = UDim2.fromScale(a, 0.5)
+	valueLabel.Text = tostring(alphaToSpeed(a))
+end
+
+local function setFromSpeed(spd)
+	spd = clamp(spd, MIN_SPEED, MAX_SPEED)
+	local a = speedToAlpha(spd)
+	setUIFromAlpha(a)
+	applySpeed(spd)
+end
+
+-- Click bar to set
+bar.InputBegan:Connect(function(inp)
+	if inp.UserInputType == Enum.UserInputType.MouseButton1 then
+		local x = (inp.Position.X - bar.AbsolutePosition.X) / bar.AbsoluteSize.X
+		setFromSpeed(alphaToSpeed(x))
+	end
+end)
+
+-- Drag knob
+local draggingKnob = false
+knob.InputBegan:Connect(function(inp)
+	if inp.UserInputType == Enum.UserInputType.MouseButton1 then
+		draggingKnob = true
+	end
+end)
+knob.InputEnded:Connect(function(inp)
+	if inp.UserInputType == Enum.UserInputType.MouseButton1 then
+		draggingKnob = false
+	end
+end)
+
+UIS.InputChanged:Connect(function(inp)
+	if draggingKnob and inp.UserInputType == Enum.UserInputType.MouseMovement then
+		local x = (inp.Position.X - bar.AbsolutePosition.X) / bar.AbsoluteSize.X
+		x = clamp(x, 0, 1)
+		setFromSpeed(alphaToSpeed(x))
+	end
+end)
+
+-- Reset + direct entry
+resetBtn.MouseButton1Click:Connect(function()
+	setFromSpeed(DEFAULT_SPEED)
+	inputBox.Text = ""
+end)
+
+inputBox.FocusLost:Connect(function()
+	local n = tonumber(inputBox.Text)
+	if n then
+		setFromSpeed(n)
+	end
+	inputBox.Text = ""
+end)
+
+-- Init & respawn persistence
+task.defer(function()
+	setFromSpeed(DEFAULT_SPEED)
+end)
+
+player.CharacterAdded:Connect(function()
+	task.defer(function()
+		local cur = tonumber(valueLabel.Text) or DEFAULT_SPEED
+		applySpeed(cur)
+	end)
+end)
