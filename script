@@ -1,5 +1,5 @@
 --!strict
--- Smoothies Script Hub — movable + resizable, fixed hitboxes, reliable noclip, tidy UI, fade-out unload
+-- Smoothies Script Hub — Movement page + Fly/Dash (with animations) + keybinds
 -- LocalScript -> StarterPlayerScripts
 
 local Players = game:GetService("Players")
@@ -10,26 +10,45 @@ local TweenService = game:GetService("TweenService")
 
 local player = Players.LocalPlayer
 local mouse = player:GetMouse()
+local camera = workspace.CurrentCamera
 
 -- ===== CONFIG =====
 local SPEED_MIN, SPEED_MAX, SPEED_DEFAULT = 8, 500, 16
 local JUMP_MIN,  JUMP_MAX,  JUMP_DEFAULT = 0, 200, 50
+local LOAD_SECONDS = 10
 local DEV_PORTAL_URL = "https://create.roblox.com/dashboard/creations"
 local DISCORD_INVITE  = "https://discord.gg/WwADpVwRvu"
-local LOAD_SECONDS    = 10
 
 -- ===== STATE =====
-local keybinds = { Teleport = Enum.KeyCode.F, Noclip = Enum.KeyCode.X }
+local keybinds = {
+	Teleport = Enum.KeyCode.F,
+	Noclip   = Enum.KeyCode.X,
+	Fly      = Enum.KeyCode.G,
+	Dash     = Enum.KeyCode.Q,
+}
 local listening: string? = nil
 local minimized = false
+local unloaded = false
+
+-- noclip
 local noclipEnabled = false
 local keepApplyConn: RBXScriptConnection? = nil
 local origCanCollide: {[Instance]: boolean} = {}
+
+-- esp / hitboxes / tools
 local highlights: { [Player]: Highlight } = {}
 local hitboxAdded = false
 local btoolsGiven = false
-local unloaded = false
 local bookmarks: {Vector3} = {}
+
+-- movement (new)
+local flyEnabled = false
+local flyLV: LinearVelocity? = nil
+local flyAO: AlignOrientation? = nil
+local flySpeed = 60 -- default
+local dashCooldown = 0.8
+local dashDistance  = 35
+local lastDashTime = 0
 
 -- ===== HELPERS =====
 local function clamp(n:number, a:number, b:number) return (n<a and a) or (n>b and b) or n end
@@ -43,7 +62,7 @@ local function getHRP(): BasePart
 	return (c:FindFirstChild("HumanoidRootPart") or c:WaitForChild("HumanoidRootPart")) :: BasePart
 end
 
--- ===== ROOT GUI =====
+-- ===== ROOT GUI + LOADER =====
 local gui = Instance.new("ScreenGui")
 gui.Name = "SmoothiesScriptHub"
 gui.IgnoreGuiInset = true
@@ -51,7 +70,7 @@ gui.ResetOnSpawn = false
 gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 gui.Parent = player:WaitForChild("PlayerGui")
 
--- ===== LOADER (mini window) =====
+-- mini loader
 local loader = Instance.new("Frame")
 loader.Size = UDim2.fromOffset(440, 126)
 loader.Position = UDim2.new(0.5, -220, 0.25, 0)
@@ -86,15 +105,14 @@ pct.BackgroundTransparency = 1; pct.Font = Enum.Font.Gotham; pct.TextSize = 14
 pct.TextColor3 = Color3.fromRGB(210,210,220); pct.Text = "0%"
 pct.Position = UDim2.fromOffset(16, 94); pct.Size = UDim2.fromOffset(120, 18); pct.Parent = loader
 
--- animate progress
 local startTime = time()
-TweenService:Create(fill, TweenInfo.new(LOAD_SECONDS, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Size = UDim2.fromScale(1,1)}):Play()
+TweenService:Create(fill, TweenInfo.new(LOAD_SECONDS, Enum.EasingStyle.Quad), {Size = UDim2.fromScale(1,1)}):Play()
 local progConn = RunService.RenderStepped:Connect(function()
 	local p = math.clamp((time()-startTime)/LOAD_SECONDS,0,1); pct.Text = string.format("%d%%", math.floor(p*100+0.5))
 	if p>=1 then progConn:Disconnect() end
 end)
 
--- ===== COLORS =====
+-- ===== PALETTE =====
 local pal = {
 	panel = Color3.fromRGB(22,22,26), header = Color3.fromRGB(28,28,32), side = Color3.fromRGB(26,26,30),
 	accent = Color3.fromRGB(104, 96, 176), green = Color3.fromRGB(110,170,80),
@@ -102,26 +120,22 @@ local pal = {
 	buttonDark = Color3.fromRGB(45,45,55), slate = Color3.fromRGB(80,110,140), grayBtn = Color3.fromRGB(80,85,95)
 }
 
--- ===== MAIN WINDOW (created after load) =====
-local panel: Frame
-local header: Frame
-local body: Frame
-local sidebar: Frame
-local pages: Frame
-local pageMain: Frame
-local pageCredits: Frame
-local windowSize = Vector2.new(900, 560) -- BIGGER default
-local minSize   = Vector2.new(720, 440)
-local maxSize   = Vector2.new(1400, 900)
+-- ===== MAIN WINDOW (built after load) =====
+local panel: Frame; local header: Frame; local body: Frame
+local sidebar: Frame; local pages: Frame
+local pageMain: Frame; local pageMovement: Frame; local pageUtility: Frame; local pageCredits: Frame
 
--- tiny builder helpers
+local windowSize = Vector2.new(980, 620) -- bigger
+local minSize   = Vector2.new(760, 480)
+local maxSize   = Vector2.new(1500, 1000)
+
 local function label(parent: Instance, txt: string, size: number, bold: boolean, x: number, y: number, color: Color3?)
 	local l = Instance.new("TextLabel")
 	l.BackgroundTransparency = 1
 	l.Font = bold and Enum.Font.GothamBold or Enum.Font.Gotham
 	l.TextSize = size; l.Text = txt; l.TextColor3 = color or Color3.fromRGB(235,235,235)
 	l.TextXAlignment = Enum.TextXAlignment.Left
-	l.Position = UDim2.fromOffset(x, y); l.Size = UDim2.fromOffset(600, size+8); l.Parent = parent
+	l.Position = UDim2.fromOffset(x, y); l.Size = UDim2.fromOffset(640, size+8); l.Parent = parent
 	return l
 end
 local function makePill(parent: Instance, text: string, pos: UDim2, size: UDim2, color: Color3)
@@ -166,8 +180,9 @@ local function connectSlider(trackF:Frame, fillF:Frame, knob:ImageButton, minV:n
 	return function(v:number) setAlpha(toAlpha(v)) end
 end
 
--- build main UI after loader
-local function buildMain()
+-- build UI after loader
+local function buildUI()
+	-- panel
 	panel = Instance.new("Frame")
 	panel.Name = "MainPanel"
 	panel.Size = UDim2.fromOffset(windowSize.X, windowSize.Y)
@@ -177,6 +192,7 @@ local function buildMain()
 	panel.Parent = gui
 	Instance.new("UICorner", panel).CornerRadius = UDim.new(0,12)
 
+	-- header
 	header = Instance.new("Frame")
 	header.Size = UDim2.fromOffset(windowSize.X, 56)
 	header.BackgroundColor3 = pal.header
@@ -184,7 +200,7 @@ local function buildMain()
 	header.Parent = panel
 	Instance.new("UICorner", header).CornerRadius = UDim.new(0,12)
 
-	local title = label(header, "Smoothies Script Hub", 20, true, 14, 16)
+	label(header, "Smoothies Script Hub", 20, true, 14, 16)
 
 	local function topBtn(txt, offsetX, bg)
 		local b = Instance.new("TextButton")
@@ -197,6 +213,7 @@ local function buildMain()
 	local minBtn  = topBtn("-", -72, Color3.fromRGB(90,90,100))
 	local closeBtn= topBtn("X", -36, pal.red)
 
+	-- body
 	body = Instance.new("Frame")
 	body.Position = UDim2.fromOffset(0, 56)
 	body.Size = UDim2.fromOffset(windowSize.X, windowSize.Y - 56)
@@ -205,7 +222,7 @@ local function buildMain()
 
 	-- sidebar
 	sidebar = Instance.new("Frame")
-	sidebar.Size = UDim2.fromOffset(180, body.Size.Y.Offset)
+	sidebar.Size = UDim2.fromOffset(190, body.Size.Y.Offset)
 	sidebar.Position = UDim2.fromOffset(0, 0)
 	sidebar.BackgroundColor3 = pal.side
 	sidebar.BorderSizePixel = 0
@@ -219,31 +236,38 @@ local function buildMain()
 	local function sideBtn(txt)
 		local b = Instance.new("TextButton")
 		b.Text = txt; b.Font = Enum.Font.GothamBold; b.TextSize = 16; b.TextColor3 = Color3.new(1,1,1)
-		b.Size = UDim2.fromOffset(180, 44)
+		b.Size = UDim2.fromOffset(190, 44)
 		b.BackgroundColor3 = Color3.fromRGB(42,42,50)
 		b.BorderSizePixel = 0; b.Parent = sidebar
 		Instance.new("UICorner", b).CornerRadius = UDim.new(0,8)
 		return b
 	end
-	local btnMain = sideBtn("Main")
-	local btnCredits = sideBtn("Credits")
+	local btnMain     = sideBtn("Main")
+	local btnMovement = sideBtn("Movement")
+	local btnUtility  = sideBtn("Utility")
+	local btnCredits  = sideBtn("Credits")
 
+	-- pages container
 	pages = Instance.new("Frame")
-	pages.Size = UDim2.fromOffset(body.Size.X.Offset - 180, body.Size.Y.Offset)
-	pages.Position = UDim2.fromOffset(180, 0)
+	pages.Size = UDim2.fromOffset(body.Size.X.Offset - 190, body.Size.Y.Offset)
+	pages.Position = UDim2.fromOffset(190, 0)
 	pages.BackgroundTransparency = 1
 	pages.Parent = body
 
 	local function makePage() local f=Instance.new("Frame"); f.BackgroundTransparency=1; f.Size=UDim2.fromScale(1,1); f.Visible=false; f.Parent=pages; return f end
-	pageMain = makePage(); pageCredits = makePage()
+	pageMain = makePage(); pageMovement = makePage(); pageUtility = makePage(); pageCredits = makePage()
+
 	local function showPage(which: Frame)
 		for _,c in ipairs(pages:GetChildren()) do if c:IsA("Frame") then c.Visible = (c==which) end end
 	end
 	showPage(pageMain)
+
 	btnMain.MouseButton1Click:Connect(function() showPage(pageMain) end)
+	btnMovement.MouseButton1Click:Connect(function() showPage(pageMovement) end)
+	btnUtility.MouseButton1Click:Connect(function() showPage(pageUtility) end)
 	btnCredits.MouseButton1Click:Connect(function() showPage(pageCredits) end)
 
-	-- resize grip (bottom-right)
+	-- resize grip
 	local grip = Instance.new("Frame")
 	grip.Size = UDim2.fromOffset(16,16)
 	grip.AnchorPoint = Vector2.new(1,1)
@@ -267,13 +291,13 @@ local function buildMain()
 			local newH = clamp(startSize.Y + delta.Y, minSize.Y, maxSize.Y)
 			panel.Size = UDim2.fromOffset(newW, newH)
 			body.Size  = UDim2.fromOffset(newW, newH - 56)
-			sidebar.Size = UDim2.fromOffset(180, newH - 56)
-			pages.Size = UDim2.fromOffset(newW - 180, newH - 56)
+			sidebar.Size = UDim2.fromOffset(190, newH - 56)
+			pages.Size = UDim2.fromOffset(newW - 190, newH - 56)
 			grip.Position = UDim2.new(1, -6, 1, -6)
 		end
 	end)
 
-	-- window drag
+	-- drag window
 	do
 		local dragging=false; local dragStart; local startPos
 		header.InputBegan:Connect(function(inp)
@@ -290,19 +314,7 @@ local function buildMain()
 		end)
 	end
 
-	-- minimize / close
-	minBtn.MouseButton1Click:Connect(function()
-		minimized = not minimized
-		sidebar.Visible = not minimized
-		pages.Visible   = not minimized
-		if minimized then
-			TweenService:Create(panel, TweenInfo.new(0.15), {Size = UDim2.fromOffset(panel.Size.X.Offset, 64)}):Play()
-		else
-			TweenService:Create(panel, TweenInfo.new(0.15), {Size = UDim2.fromOffset(windowSize.X, windowSize.Y)}):Play()
-		end
-	end)
-
-	-- unload confirm with fade-away animation
+	-- minimize / close (+ fade away unload)
 	local overlay = Instance.new("Frame")
 	overlay.Visible=false; overlay.BackgroundColor3=Color3.new(0,0,0); overlay.BackgroundTransparency=0.35
 	overlay.Size=UDim2.fromScale(1,1); overlay.Parent=panel
@@ -316,73 +328,79 @@ local function buildMain()
 	local function fullUnload()
 		if unloaded then return end
 		unloaded = true
-		-- restore defaults
+		-- stop fly
+		if flyEnabled then
+			flyEnabled = false
+			if flyLV then flyLV:Destroy(); flyLV=nil end
+			if flyAO then flyAO:Destroy(); flyAO=nil end
+			pcall(function() getHumanoid():ChangeState(Enum.HumanoidStateType.Running) end)
+			TweenService:Create(camera, TweenInfo.new(0.2), {FieldOfView = 70}):Play()
+		end
+		-- stop noclip
 		if noclipEnabled then
 			noclipEnabled=false
 			if keepApplyConn then keepApplyConn:Disconnect() keepApplyConn=nil end
 			for _, d in ipairs(getCharacter():GetDescendants()) do
 				if d:IsA("BasePart") and origCanCollide[d] ~= nil then d.CanCollide = origCanCollide[d] end
-			end
-			origCanCollide = {}
+			end; origCanCollide = {}
 		end
-		local hum = getHumanoid(); hum.WalkSpeed=SPEED_DEFAULT; hum.UseJumpPower=true; hum.JumpPower=JUMP_DEFAULT
-		for _,h in pairs(highlights) do if h then h:Destroy() end end
-		highlights = {}
-		-- remove hitboxes
-		for _,plr in ipairs(Players:GetPlayers()) do
-			local c=plr.Character; if c then local hb=c:FindFirstChild("Hitbox"); if hb and hb:IsA("BasePart") then hb:Destroy() end end
+		-- restore WS/JP
+		local hum = getHumanoid(); hum.WalkSpeed = SPEED_DEFAULT; hum.UseJumpPower=true; hum.JumpPower = JUMP_DEFAULT
+		-- clear esp/hitboxes/tools
+		for _,h in pairs(highlights) do if h then h:Destroy() end end; highlights = {}
+		for _,plr in ipairs(Players:GetPlayers()) do local c=plr.Character; if c then local hb=c:FindFirstChild("Hitbox"); if hb and hb:IsA("BasePart") then hb:Destroy() end end end
+		local bp = player:FindFirstChildOfClass("Backpack"); if bp then for _,t in ipairs(bp:GetChildren()) do if t:IsA("Tool") and t.Name:sub(1,3)=="BT_" then t:Destroy() end end end
+		-- fade away
+		for _,d in ipairs(panel:GetDescendants()) do
+			if d:IsA("TextLabel") or d:IsA("TextButton") then pcall(function() TweenService:Create(d, TweenInfo.new(0.25), {TextTransparency=1, BackgroundTransparency=1}):Play() end)
+			elseif d:IsA("Frame") or d:IsA("ImageLabel") then pcall(function() TweenService:Create(d, TweenInfo.new(0.25), {BackgroundTransparency=1}):Play() end) end
 		end
-		-- remove BTools
-		local bp = player:FindFirstChildOfClass("Backpack")
-		if bp then for _,t in ipairs(bp:GetChildren()) do if t:IsA("Tool") and t.Name:sub(1,3)=="BT_" then t:Destroy() end end end
-		-- fade-out UI then destroy
-		local tween = TweenService:Create(panel, TweenInfo.new(0.25, Enum.EasingStyle.Quad), {BackgroundTransparency = 1})
-		for _,desc in ipairs(panel:GetDescendants()) do
-			if desc:IsA("Frame") or desc:IsA("TextLabel") or desc:IsA("TextButton") or desc:IsA("ImageLabel") then
-				pcall(function() desc.BackgroundTransparency = desc.BackgroundTransparency end)
-				pcall(function()
-					TweenService:Create(desc, TweenInfo.new(0.25, Enum.EasingStyle.Quad),
-						{BackgroundTransparency = 1, TextTransparency = desc:IsA("TextLabel") or desc:IsA("TextButton") and 1 or nil}):Play()
-				end)
-			end
-		end
-		tween:Play(); tween.Completed:Wait()
+		local fade = TweenService:Create(panel, TweenInfo.new(0.25), {BackgroundTransparency=1})
+		fade:Play(); fade.Completed:Wait()
 		gui:Destroy()
 	end
+
+	local minBtn  = header:FindFirstChildWhichIsA("TextButton")
+	local closeBtn = header:FindFirstChildWhichIsA("TextButton", true)
+	-- they’re created in order; find by text
+	for _,b in ipairs(header:GetChildren()) do
+		if b:IsA("TextButton") and b.Text=="-" then minBtn=b end
+		if b:IsA("TextButton") and b.Text=="X" then closeBtn=b end
+	end
+	minBtn.MouseButton1Click:Connect(function()
+		minimized = not minimized
+		sidebar.Visible = not minimized
+		pages.Visible   = not minimized
+		if minimized then TweenService:Create(panel, TweenInfo.new(0.15), {Size = UDim2.fromOffset(panel.Size.X.Offset, 64)}):Play()
+		else TweenService:Create(panel, TweenInfo.new(0.15), {Size = UDim2.fromOffset(windowSize.X, windowSize.Y)}):Play() end
+	end)
 	closeBtn.MouseButton1Click:Connect(function() overlay.Visible = true end)
 	noBtn.MouseButton1Click:Connect(function() overlay.Visible = false end)
 	yesBtn.MouseButton1Click:Connect(function() fullUnload() end)
 
-	-- ========= MAIN PAGE CONTENT =========
-	local workW = pages.Size.X.Offset
+	-- ========= PAGE: MAIN =========
 	label(pageMain, "Main", 22, true, 14, 12)
 
-	-- Walk speed
+	local workW = pages.Size.X.Offset
 	label(pageMain, "Walk Speed", 14, false, 14, 56)
 	local walkVal = label(pageMain, tostring(SPEED_DEFAULT), 14, false, workW - 40, 56); walkVal.TextXAlignment = Enum.TextXAlignment.Right
 	local walkTrack, walkFill, walkKnob = makeTrack(pageMain, 14, 76, workW - 40, pal.cyan)
 
 	local speedBox = Instance.new("TextBox")
 	speedBox.PlaceholderText = "Type speed (8–500)"
-	speedBox.Font = Enum.Font.Gotham; speedBox.TextSize = 14
-	speedBox.TextColor3 = Color3.fromRGB(255,255,255)
-	speedBox.BackgroundColor3 = Color3.fromRGB(36,36,42)
-	speedBox.BorderSizePixel = 0; speedBox.Size = UDim2.fromOffset(workW - 40, 28)
-	speedBox.Position = UDim2.fromOffset(14, 100); speedBox.Parent = pageMain
+	speedBox.Font = Enum.Font.Gotham; speedBox.TextSize = 14; speedBox.TextColor3 = Color3.fromRGB(255,255,255)
+	speedBox.BackgroundColor3 = Color3.fromRGB(36,36,42); speedBox.BorderSizePixel = 0
+	speedBox.Size = UDim2.fromOffset(workW - 40, 28); speedBox.Position = UDim2.fromOffset(14, 100); speedBox.Parent = pageMain
 	Instance.new("UICorner", speedBox).CornerRadius = UDim.new(0,8)
 
-	-- Jump power
 	label(pageMain, "Jump Power", 14, false, 14, 144)
 	local jumpVal = label(pageMain, tostring(JUMP_DEFAULT), 14, false, workW - 40, 144); jumpVal.TextXAlignment=Enum.TextXAlignment.Right
 	local jumpTrack, jumpFill, jumpKnob = makeTrack(pageMain, 14, 164, workW - 40, pal.orange)
 
-	-- Functions to apply values
 	local function applyWalk(v:number) walkVal.Text=tostring(v); getHumanoid().WalkSpeed=v end
 	local function applyJump(v:number) jumpVal.Text=tostring(v); local h=getHumanoid(); h.UseJumpPower=true; h.JumpPower=v end
-
 	local setWalk = connectSlider(walkTrack, walkFill, walkKnob, SPEED_MIN, SPEED_MAX, SPEED_DEFAULT, applyWalk)
 	local setJump = connectSlider(jumpTrack, jumpFill, jumpKnob, JUMP_MIN, JUMP_MAX, JUMP_DEFAULT, applyJump)
-
 	speedBox.FocusLost:Connect(function()
 		if unloaded then return end
 		local n = tonumber(speedBox.Text)
@@ -390,8 +408,8 @@ local function buildMain()
 		speedBox.Text = ""
 	end)
 
-	-- Buttons rows
-	local btnW = math.floor((workW - 40 - 20)/3) -- 3 columns
+	-- buttons (3-col)
+	local btnW = math.floor((workW - 40 - 20)/3)
 	local teleportBtn = makePill(pageMain, "Teleport (keybind)", UDim2.fromOffset(16, 210), UDim2.fromOffset(btnW, 36), pal.accent)
 	local noclipBtn   = makePill(pageMain, "Noclip: OFF",        UDim2.fromOffset(20+btnW, 210), UDim2.fromOffset(btnW, 36), pal.red)
 	local btoolsBtn   = makePill(pageMain, "Give BTools",        UDim2.fromOffset(24+btnW*2, 210), UDim2.fromOffset(btnW, 36), pal.green)
@@ -400,7 +418,7 @@ local function buildMain()
 	local resetJump   = makePill(pageMain, "Reset Jump",         UDim2.fromOffset(20+btnW, 254), UDim2.fromOffset(btnW, 36), pal.red)
 	local portalBtn   = makePill(pageMain, "Dev Portal",         UDim2.fromOffset(24+btnW*2, 254), UDim2.fromOffset(btnW, 36), pal.accent)
 
-	-- Player Boxes + Hitboxes
+	-- ESP/Hitboxes
 	local espBtn      = makePill(pageMain, "Player Boxes: OFF",  UDim2.fromOffset(24+btnW*2, 294), UDim2.fromOffset(btnW, 36), pal.grayBtn)
 	local addHBBtn    = makePill(pageMain, "Add Hitboxes",       UDim2.fromOffset(24+btnW*2, 334), UDim2.fromOffset(btnW, 36), Color3.fromRGB(180,80,80))
 	local rmHBBtn     = makePill(pageMain, "Remove Hitboxes",    UDim2.fromOffset(24+btnW*2, 374), UDim2.fromOffset(btnW, 36), Color3.fromRGB(95,95,105))
@@ -414,14 +432,88 @@ local function buildMain()
 	local bookmarksLayout = Instance.new("UIListLayout", bookmarksFrame)
 	bookmarksLayout.SortOrder = Enum.SortOrder.LayoutOrder; bookmarksLayout.Padding = UDim.new(0,8)
 
-	-- Keybind row
+	-- keybinds (now includes Fly/Dash)
 	label(pageMain, "Keybinds", 16, true, 14, windowSize.Y-56-70)
-	local tpBindBtn = makePill(pageMain, "Teleport: "..keybinds.Teleport.Name, UDim2.fromOffset(16, windowSize.Y-56-40), UDim2.fromOffset(btnW, 34), pal.buttonDark)
-	local ncBindBtn = makePill(pageMain, "Noclip: "..keybinds.Noclip.Name,     UDim2.fromOffset(20+btnW, windowSize.Y-56-40), UDim2.fromOffset(btnW, 34), pal.buttonDark)
-	local fpsLabel  = label(pageMain, "FPS: --", 14, false, 16, windowSize.Y-56-6)
+	local tpBindBtn  = makePill(pageMain, "Teleport: "..keybinds.Teleport.Name, UDim2.fromOffset(16, windowSize.Y-56-40), UDim2.fromOffset(btnW, 34), pal.buttonDark)
+	local ncBindBtn  = makePill(pageMain, "Noclip: "..keybinds.Noclip.Name,     UDim2.fromOffset(20+btnW, windowSize.Y-56-40), UDim2.fromOffset(btnW, 34), pal.buttonDark)
+	local flyBindBtn = makePill(pageMain, "Fly: "..keybinds.Fly.Name,           UDim2.fromOffset(24+btnW*2, windowSize.Y-56-40), UDim2.fromOffset(btnW, 34), pal.buttonDark)
 
-	-- ========== WIRING ==========
-	-- Noclip (toggle + keep forcing CanCollide=false)
+	-- ========= PAGE: MOVEMENT =========
+	label(pageMovement, "Movement", 22, true, 14, 12)
+
+	-- Fly toggle + speed
+	local flyToggleBtn = makePill(pageMovement, "Fly: OFF", UDim2.fromOffset(16, 60), UDim2.fromOffset(220, 36), pal.red)
+	label(pageMovement, "Fly Speed", 14, false, 16, 108)
+	local flySpeedVal = label(pageMovement, tostring(flySpeed), 14, false, 16+520, 108); flySpeedVal.TextXAlignment = Enum.TextXAlignment.Right
+	local flyTrack, flyFill, flyKnob = makeTrack(pageMovement, 16, 128, 520, pal.cyan)
+
+	local setFlySpeed = connectSlider(flyTrack, flyFill, flyKnob, 10, 200, flySpeed, function(v) flySpeed=v; flySpeedVal.Text=tostring(v) end)
+
+	-- Dash settings
+	local dashBtn = makePill(pageMovement, "Dash ("..keybinds.Dash.Name..")", UDim2.fromOffset(260, 60), UDim2.fromOffset(220, 36), pal.accent)
+	label(pageMovement, "Dash Distance", 14, false, 16, 180)
+	local dashDistVal = label(pageMovement, tostring(dashDistance), 14, false, 16+520, 180); dashDistVal.TextXAlignment=Enum.TextXAlignment.Right
+	local dashDistTrack, dashDistFill, dashDistKnob = makeTrack(pageMovement, 16, 200, 520, pal.orange)
+	local setDashDist = connectSlider(dashDistTrack, dashDistFill, dashDistKnob, 10, 80, dashDistance, function(v) dashDistance=v; dashDistVal.Text=tostring(v) end)
+
+	label(pageMovement, "Dash Cooldown (seconds)", 14, false, 16, 232)
+	local dashCdVal = label(pageMovement, string.format("%.1f", dashCooldown), 14, false, 16+520, 232); dashCdVal.TextXAlignment=Enum.TextXAlignment.Right
+	local dashCdTrack, dashCdFill, dashCdKnob = makeTrack(pageMovement, 16, 252, 520, pal.slate)
+	local setDashCd = connectSlider(dashCdTrack, dashCdFill, dashCdKnob, 0, 3, dashCooldown*10, function(v) dashCooldown = v/10; dashCdVal.Text = string.format("%.1f", dashCooldown) end)
+
+	-- ========= PAGE: UTILITY =========
+	label(pageUtility, "Utility", 22, true, 14, 12)
+	local panicBtn = makePill(pageUtility, "Panic (Unload)", UDim2.fromOffset(16, 60), UDim2.fromOffset(220,36), pal.red)
+
+	-- ========= PAGE: CREDITS =========
+	label(pageCredits, "Credits", 22, true, 14, 12)
+	label(pageCredits, "Smoothalicious was here", 16, false, 14, 54)
+	local discordBtn = makePill(pageCredits, "Copy Invite / Open Discord", UDim2.fromOffset(14, 96), UDim2.fromOffset(320, 36), pal.accent)
+
+	-- ===== FEATURE WIRING =====
+
+	-- bookmarks UI
+	local function rebuildBookmarksUI()
+		for _,c in ipairs(bookmarksFrame:GetChildren()) do if not c:IsA("UIListLayout") then c:Destroy() end end
+		for i,pos in ipairs(bookmarks) do
+			local b = makePill(bookmarksFrame, ("#%d — Teleport"):format(i), UDim2.fromOffset(0,0), UDim2.fromOffset(240,28), pal.slate)
+			b.MouseButton1Click:Connect(function() pcall(function() getHRP().CFrame = CFrame.new(pos + Vector3.new(0,3,0)) end) end)
+		end
+	end
+	addBookmarkBtn.MouseButton1Click:Connect(function() table.insert(bookmarks, getHRP().Position); rebuildBookmarksUI() end)
+
+	-- Dev portal
+	portalBtn.MouseButton1Click:Connect(function() pcall(function() GuiService:OpenBrowserWindow(DEV_PORTAL_URL) end) end)
+
+	-- ESP boxes
+	local espOn=false
+	local function ensureHighlight(plr: Player)
+		if plr==player or not plr.Character or highlights[plr] then return end
+		local h = Instance.new("Highlight"); h.FillTransparency=1; h.OutlineTransparency=0
+		h.OutlineColor = Color3.fromRGB(255,120,120); h.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+		h.Parent = plr.Character; highlights[plr]=h
+	end
+	local function espEnable() for _,p in ipairs(Players:GetPlayers()) do if p~=player and p.Character then ensureHighlight(p) end end espBtn.Text="Player Boxes: ON"; espBtn.BackgroundColor3 = Color3.fromRGB(60,130,90); espOn=true end
+	local function espDisable() for p,h in pairs(highlights) do if h then h:Destroy() end end highlights={}; espBtn.Text="Player Boxes: OFF"; espBtn.BackgroundColor3 = pal.grayBtn; espOn=false end
+	espBtn.MouseButton1Click:Connect(function() if espOn then espDisable() else espEnable() end end)
+
+	-- Hitboxes (visible so you can confirm)
+	local function getOrCreateHitbox(char: Model): BasePart?
+		local hrp = char:FindFirstChild("HumanoidRootPart"); if not hrp or not hrp:IsA("BasePart") then return nil end
+		local hb = char:FindFirstChild("Hitbox")
+		if hb and hb:IsA("BasePart") then return hb end
+		hb = Instance.new("Part")
+		hb.Name="Hitbox"; hb.Size=Vector3.new(5,7,5); hb.Transparency=0.65; hb.Material=Enum.Material.ForceField; hb.Color=Color3.fromRGB(255,85,85)
+		hb.Anchored=false; hb.CanCollide=false; hb.CanQuery=true; hb.CanTouch=true; hb.Massless=true; hb.Parent=char
+		local w=Instance.new("WeldConstraint"); w.Part0=hrp; w.Part1=hb; w.Parent=hb; hb.CFrame=hrp.CFrame
+		return hb
+	end
+	local function addHitboxesAll() for _,plr in ipairs(Players:GetPlayers()) do local c=plr.Character; if c then getOrCreateHitbox(c) end end end
+	local function removeHitboxesAll() for _,plr in ipairs(Players:GetPlayers()) do local c=plr.Character; if c then local hb=c:FindFirstChild("Hitbox"); if hb and hb:IsA("BasePart") then hb:Destroy() end end end end
+	addHBBtn.MouseButton1Click:Connect(function() hitboxAdded=true; addHitboxesAll() end)
+	rmHBBtn.MouseButton1Click:Connect(function() hitboxAdded=false; removeHitboxesAll() end)
+
+	-- Noclip
 	local function applyNoclipOnce()
 		local char = getCharacter()
 		for _, d in ipairs(char:GetDescendants()) do
@@ -436,8 +528,7 @@ local function buildMain()
 		noclipEnabled = false
 		noclipBtn.Text = "Noclip: OFF"
 		if keepApplyConn then keepApplyConn:Disconnect() keepApplyConn=nil end
-		local char = getCharacter()
-		for _, d in ipairs(char:GetDescendants()) do
+		for _, d in ipairs(getCharacter():GetDescendants()) do
 			if d:IsA("BasePart") and origCanCollide[d] ~= nil then d.CanCollide = origCanCollide[d] end
 		end
 		origCanCollide = {}
@@ -447,59 +538,12 @@ local function buildMain()
 		noclipEnabled = true
 		noclipBtn.Text = "Noclip: ON"
 		applyNoclipOnce()
-		keepApplyConn = RunService.Heartbeat:Connect(function()
-			if noclipEnabled then applyNoclipOnce() end
-		end)
+		keepApplyConn = RunService.Heartbeat:Connect(function() if noclipEnabled then applyNoclipOnce() end end)
 	end
 	local function toggleNoclip() if noclipEnabled then stopNoclip() else startNoclip() end end
 	noclipBtn.MouseButton1Click:Connect(function() if not unloaded then toggleNoclip() end end)
 
-	-- Keybind rebind + actions (ensures noclip on X works even when not focused)
-	local function beginListen(which: string, btn: TextButton)
-		if listening then return end
-		listening = which
-		btn.Text = which..": Press..."
-		btn.BackgroundColor3 = Color3.fromRGB(70,70,30)
-	end
-	tpBindBtn.MouseButton1Click:Connect(function() beginListen("Teleport", tpBindBtn) end)
-	ncBindBtn.MouseButton1Click:Connect(function() beginListen("Noclip",   ncBindBtn) end)
-
-	UIS.InputBegan:Connect(function(inp, gp)
-		if unloaded then return end
-		-- capture new bind
-		if listening and inp.UserInputType==Enum.UserInputType.Keyboard then
-			local kc = inp.KeyCode
-			if kc ~= Enum.KeyCode.Unknown and kc ~= Enum.KeyCode.Escape then
-				if listening == "Teleport" then keybinds.Teleport = kc; tpBindBtn.Text = "Teleport: "..kc.Name end
-				if listening == "Noclip"   then keybinds.Noclip   = kc; ncBindBtn.Text = "Noclip: "..kc.Name end
-				listening = nil
-				tpBindBtn.BackgroundColor3 = pal.buttonDark
-				ncBindBtn.BackgroundColor3 = pal.buttonDark
-			end
-			return
-		end
-		-- actions (gp may be true in textboxes; we still want noclip/teleport to be responsive when not typing)
-		if inp.UserInputType==Enum.UserInputType.Keyboard then
-			if inp.KeyCode == keybinds.Teleport and not gp then
-				-- teleport to mouse position
-				local hrp = getHRP(); local hit = mouse.Hit
-				if hit then hrp.CFrame = CFrame.new(hit.Position + Vector3.new(0,3,0)) end
-			elseif inp.KeyCode == keybinds.Noclip and not gp then
-				toggleNoclip()
-			end
-		end
-	end)
-
-	-- Walk/Jump controls & resets
-	local function setDefaults()
-		getHumanoid().WalkSpeed = SPEED_DEFAULT
-		local h=getHumanoid(); h.UseJumpPower=true; h.JumpPower=JUMP_DEFAULT
-		walkVal.Text=tostring(SPEED_DEFAULT); jumpVal.Text=tostring(JUMP_DEFAULT)
-	end
-	resetSpeed.MouseButton1Click:Connect(function() setWalk(SPEED_DEFAULT); applyWalk(SPEED_DEFAULT) end)
-	resetJump.MouseButton1Click:Connect(function()  setJump(JUMP_DEFAULT);   applyJump(JUMP_DEFAULT)  end)
-
-	-- BTools (simple)
+	-- BTools
 	local function mkTool(name:string) local t=Instance.new("Tool"); t.RequiresHandle=false; t.Name=name; t.CanBeDropped=false; return t end
 	btoolsBtn.MouseButton1Click:Connect(function()
 		if unloaded or btoolsGiven then return end; btoolsGiven=true
@@ -520,108 +564,128 @@ local function buildMain()
 		mv.Parent=bp
 	end)
 
-	-- Dev portal
-	portalBtn.MouseButton1Click:Connect(function()
-		local _ = pcall(function() GuiService:OpenBrowserWindow(DEV_PORTAL_URL) end)
-	end)
-
-	-- Player Boxes (Highlight)
-	local espOn=false
-	local function ensureHighlight(plr: Player)
-		if plr==player or not plr.Character or highlights[plr] then return end
-		local h = Instance.new("Highlight"); h.FillTransparency=1; h.OutlineTransparency=0
-		h.OutlineColor = Color3.fromRGB(255,120,120); h.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-		h.Parent = plr.Character; highlights[plr]=h
-	end
-	local function espEnable()
-		for _,p in ipairs(Players:GetPlayers()) do if p~=player and p.Character then ensureHighlight(p) end end
-		espBtn.Text="Player Boxes: ON"; espBtn.BackgroundColor3 = Color3.fromRGB(60,130,90); espOn=true
-	end
-	local function espDisable()
-		for p,h in pairs(highlights) do if h then h:Destroy() end end
-		highlights = {}; espBtn.Text="Player Boxes: OFF"; espBtn.BackgroundColor3 = pal.grayBtn; espOn=false
-	end
-	espBtn.MouseButton1Click:Connect(function() if espOn then espDisable() else espEnable() end end)
-
-	-- HITBOXES (visible parts so you can see them; client-side only)
-	local function getOrCreateHitbox(char: Model): BasePart?
-		local hrp = char:FindFirstChild("HumanoidRootPart")
-		if not hrp or not hrp:IsA("BasePart") then return nil end
-		local hb = char:FindFirstChild("Hitbox")
-		if hb and hb:IsA("BasePart") then return hb end
-		hb = Instance.new("Part")
-		hb.Name = "Hitbox"
-		hb.Size = Vector3.new(5, 7, 5)         -- clear, slightly larger than the body
-		hb.Transparency = 0.65                  -- visible so you can confirm it exists
-		hb.Material = Enum.Material.ForceField  -- nice glow look
-		hb.Color = Color3.fromRGB(255, 85, 85)
-		hb.Anchored = false
-		hb.CanCollide = false
-		hb.CanQuery = true
-		hb.CanTouch = true
-		hb.Massless = true
-		hb.Parent = char
-		local weld = Instance.new("WeldConstraint")
-		weld.Part0 = hrp
-		weld.Part1 = hb
-		weld.Parent = hb
-		hb.CFrame = hrp.CFrame
-		return hb
+	-- Teleport action keybind
+	local function teleportToMouse()
+		local hrp = getHRP(); local hit = mouse.Hit; if hit then hrp.CFrame = CFrame.new(hit.Position + Vector3.new(0,3,0)) end
 	end
 
-	local charAddedConns: { [Player]: RBXScriptConnection } = {}
-
-	local function addHitboxesAll()
-		for _,plr in ipairs(Players:GetPlayers()) do
-			if plr.Character then getOrCreateHitbox(plr.Character) end
-			if charAddedConns[plr] then charAddedConns[plr]:Disconnect() end
-			charAddedConns[plr] = plr.CharacterAdded:Connect(function(c) if hitboxAdded then task.defer(function() getOrCreateHitbox(c) end) end end)
-		end
+	-- Rebinding (incl. Fly/Dash)
+	local function beginListen(which: string, btn: TextButton)
+		if listening then return end
+		listening = which; btn.Text = which..": Press..."; btn.BackgroundColor3 = Color3.fromRGB(70,70,30)
 	end
-	local function removeHitboxesAll()
-		for _,plr in ipairs(Players:GetPlayers()) do
-			if charAddedConns[plr] then charAddedConns[plr]:Disconnect(); charAddedConns[plr]=nil end
-			local c = plr.Character
-			if c then local hb=c:FindFirstChild("Hitbox"); if hb and hb:IsA("BasePart") then hb:Destroy() end end
-		end
-	end
+	tpBindBtn.MouseButton1Click:Connect(function() beginListen("Teleport", tpBindBtn) end)
+	ncBindBtn.MouseButton1Click:Connect(function() beginListen("Noclip",   ncBindBtn) end)
+	flyBindBtn.MouseButton1Click:Connect(function() beginListen("Fly",     flyBindBtn) end)
 
-	addHBBtn.MouseButton1Click:Connect(function()
+	UIS.InputBegan:Connect(function(inp, gp)
 		if unloaded then return end
-		hitboxAdded = true
-		addHitboxesAll()
-	end)
-	rmHBBtn.MouseButton1Click:Connect(function()
-		if unloaded then return end
-		hitboxAdded = false
-		removeHitboxesAll()
-	end)
-
-	-- BOOKMARKS
-	local function rebuildBookmarksUI()
-		for _,c in ipairs(bookmarksFrame:GetChildren()) do if not c:IsA("UIListLayout") then c:Destroy() end end
-		for i,pos in ipairs(bookmarks) do
-			local b = makePill(bookmarksFrame, ("#%d — Teleport"):format(i), UDim2.fromOffset(0,0), UDim2.fromOffset(240,28), pal.slate)
-			b.MouseButton1Click:Connect(function()
-				pcall(function() getHRP().CFrame = CFrame.new(pos + Vector3.new(0,3,0)) end)
-			end)
+		-- set binds
+		if listening and inp.UserInputType==Enum.UserInputType.Keyboard then
+			local kc = inp.KeyCode
+			if kc ~= Enum.KeyCode.Unknown and kc ~= Enum.KeyCode.Escape then
+				local targetBtn: TextButton? = nil
+				if listening == "Teleport" then keybinds.Teleport = kc; targetBtn = tpBindBtn
+				elseif listening == "Noclip" then keybinds.Noclip = kc; targetBtn = ncBindBtn
+				elseif listening == "Fly" then keybinds.Fly = kc; targetBtn = flyBindBtn end
+				if targetBtn then targetBtn.Text = listening..": "..kc.Name; targetBtn.BackgroundColor3 = pal.buttonDark end
+				listening = nil
+				return
+			end
 		end
-	end
-	addBookmarkBtn.MouseButton1Click:Connect(function()
-		local hrp = getHRP(); table.insert(bookmarks, hrp.Position); rebuildBookmarksUI()
+		-- actions
+		if inp.UserInputType==Enum.UserInputType.Keyboard then
+			if inp.KeyCode == keybinds.Teleport and not gp then teleportToMouse()
+			elseif inp.KeyCode == keybinds.Noclip and not gp then toggleNoclip()
+			elseif inp.KeyCode == keybinds.Fly and not gp then
+				-- toggle fly
+				if flyEnabled then
+					flyEnabled=false
+					flyToggleBtn.Text = "Fly: OFF"; flyToggleBtn.BackgroundColor3 = pal.red
+					if flyLV then flyLV:Destroy(); flyLV=nil end
+					if flyAO then flyAO:Destroy(); flyAO=nil end
+					pcall(function() getHumanoid():ChangeState(Enum.HumanoidStateType.Running) end)
+					TweenService:Create(camera, TweenInfo.new(0.18), {FieldOfView = 70}):Play()
+				else
+					flyEnabled=true
+					flyToggleBtn.Text = "Fly: ON"; flyToggleBtn.BackgroundColor3 = Color3.fromRGB(60,130,90)
+					local hrp = getHRP()
+					local att = Instance.new("Attachment"); att.Parent = hrp
+					flyLV = Instance.new("LinearVelocity")
+					flyLV.Attachment0 = att; flyLV.MaxForce = 1e5; flyLV.RelativeTo = Enum.ActuatorRelativeTo.World
+					flyLV.Parent = hrp
+					flyAO = Instance.new("AlignOrientation")
+					flyAO.Attachment0 = att; flyAO.Mode = Enum.OrientationAlignmentMode.OneAttachment
+					flyAO.Responsiveness = 20; flyAO.Parent = hrp
+					getHumanoid():ChangeState(Enum.HumanoidStateType.Physics)
+					TweenService:Create(camera, TweenInfo.new(0.18), {FieldOfView = 78}):Play()
+				end
+			elseif inp.KeyCode == keybinds.Dash and not gp then
+				-- dash forward
+				local now = time()
+				if (now - lastDashTime) >= dashCooldown then
+					lastDashTime = now
+					local hrp = getHRP()
+					local dir = camera.CFrame.LookVector
+					-- fov pulse
+					local f1 = TweenService:Create(camera, TweenInfo.new(0.08), {FieldOfView = 86})
+					local f2 = TweenService:Create(camera, TweenInfo.new(0.18), {FieldOfView = 70})
+					f1:Play(); f1.Completed:Connect(function() f2:Play() end)
+					-- trail effect
+					local a0 = Instance.new("Attachment"); a0.Parent = hrp
+					local a1 = Instance.new("Attachment"); a1.Parent = hrp
+					a0.Position = Vector3.new(0,  2, 0); a1.Position = Vector3.new(0, -2, 0)
+					local trail = Instance.new("Trail")
+					trail.Attachment0 = a0; trail.Attachment1 = a1
+					trail.Lifetime = 0.25; trail.MinLength = 0.1; trail.Color = ColorSequence.new(Color3.fromRGB(150,150,255))
+					trail.Transparency = NumberSequence.new(0.2, 1); trail.Enabled=true; trail.Parent = hrp
+					-- physics impulse (no teleport; keeps it legit for testing)
+					hrp.AssemblyLinearVelocity = dir * (dashDistance*4)
+					task.delay(0.3, function() trail.Enabled=false; trail:Destroy(); a0:Destroy(); a1:Destroy() end)
+				end
+			end
+		end
 	end)
 
-	-- FPS label
-	local last = time(); local frames = 0
-	RunService.RenderStepped:Connect(function()
-		frames += 1; local now = time()
-		if now - last >= 1 then fpsLabel.Text = "FPS: "..frames; frames = 0; last = now end
+	-- Fly button (same toggle)
+	flyToggleBtn.MouseButton1Click:Connect(function()
+		UIS.InputBegan:Fire({KeyCode = keybinds.Fly} :: any, false) -- reuse logic
 	end)
 
-	-- Credits page
-	label(pageCredits, "Credits", 22, true, 14, 12)
-	label(pageCredits, "Smoothalicious was here", 16, false, 14, 54)
-	local discordBtn = makePill(pageCredits, "Copy Invite / Open Discord", UDim2.fromOffset(14, 96), UDim2.fromOffset(320, 36), pal.accent)
+	-- Fly motion update (WASD + Space / LeftControl)
+	RunService.Heartbeat:Connect(function(dt)
+		if flyEnabled and flyLV and flyAO then
+			local move = Vector3.zero
+			local cf = camera.CFrame
+			if UIS:IsKeyDown(Enum.KeyCode.W) then move += cf.LookVector end
+			if UIS:IsKeyDown(Enum.KeyCode.S) then move -= cf.LookVector end
+			if UIS:IsKeyDown(Enum.KeyCode.A) then move -= cf.RightVector end
+			if UIS:IsKeyDown(Enum.KeyCode.D) then move += cf.RightVector end
+			if UIS:IsKeyDown(Enum.KeyCode.Space) then move += Vector3.new(0,1,0) end
+			if UIS:IsKeyDown(Enum.KeyCode.LeftControl) then move += Vector3.new(0,-1,0) end
+			if move.Magnitude > 0 then move = move.Unit else move = Vector3.zero end
+			flyLV.VectorVelocity = move * flySpeed
+			-- tilt/align to camera yaw (keep roll zero)
+			local _,y,_ = cf:ToOrientation()
+			flyAO.CFrame = CFrame.fromOrientation(0,y,0)
+			-- subtle tilt animation based on input
+			local tilt = 0
+			if UIS:IsKeyDown(Enum.KeyCode.A) then tilt = -math.rad(8) elseif UIS:IsKeyDown(Enum.KeyCode.D) then tilt = math.rad(8) end
+			flyAO.CFrame = flyAO.CFrame * CFrame.Angles(0,0,tilt)
+		end
+	end)
+
+	-- Teleport button just a label / info
+	teleportBtn.MouseButton1Click:Connect(function() end)
+
+	-- resets
+	resetSpeed.MouseButton1Click:Connect(function() setWalk(SPEED_DEFAULT); applyWalk(SPEED_DEFAULT) end)
+	resetJump.MouseButton1Click:Connect(function()  setJump(JUMP_DEFAULT);   applyJump(JUMP_DEFAULT)  end)
+
+	-- panic in Utility
+	panicBtn.MouseButton1Click:Connect(function() fullUnload() end)
+
+	-- Discord copy/open
 	local function copyToClipboard(text:string)
 		return pcall(function()
 			if setclipboard then setclipboard(text) return end
@@ -634,28 +698,28 @@ local function buildMain()
 			discordBtn.Text = "Invite Copied!"
 			task.delay(1.6, function() if discordBtn and not unloaded then discordBtn.Text = "Copy Invite / Open Discord" end end)
 		else
-			local _ = pcall(function() GuiService:OpenBrowserWindow(DISCORD_INVITE) end)
+			pcall(function() GuiService:OpenBrowserWindow(DISCORD_INVITE) end)
 		end
 	end)
 
-	-- defaults
+	-- init defaults
 	getHumanoid().WalkSpeed = SPEED_DEFAULT; local h=getHumanoid(); h.UseJumpPower=true; h.JumpPower=JUMP_DEFAULT
 
-	-- respawn persistence
+	-- keep features on respawn
 	player.CharacterAdded:Connect(function()
 		task.defer(function()
+			if flyEnabled then flyEnabled=false end
 			if noclipEnabled then origCanCollide = {}; applyNoclipOnce() end
 			if hitboxAdded then addHitboxesAll() end
-			-- keep current numbers
 			applyWalk(tonumber(walkVal.Text) or SPEED_DEFAULT)
 			applyJump(tonumber(jumpVal.Text) or JUMP_DEFAULT)
 		end)
 	end)
 end
 
--- after loading completes, fade out loader and build UI
+-- after load, fade out loader and show UI
 task.delay(LOAD_SECONDS, function()
 	local fade = TweenService:Create(loader, TweenInfo.new(0.2, Enum.EasingStyle.Quad), {BackgroundTransparency = 1})
 	fade:Play(); fade.Completed:Wait(); loader:Destroy()
-	buildMain()
+	buildUI()
 end)
