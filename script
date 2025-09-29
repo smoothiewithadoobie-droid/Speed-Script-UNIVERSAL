@@ -40,6 +40,9 @@ local keybinds = {
 	Noclip   = Enum.KeyCode.X,
 	Fly      = Enum.KeyCode.G,
 	Dash     = Enum.KeyCode.Q,
+-- add a keybind for Turbo (if you don't already have one)
+keybinds.Turbo = keybinds.Turbo or Enum.KeyCode.T
+
 }
 local listening: string? = nil
 local minimized = false
@@ -882,4 +885,285 @@ task.delay(LOAD_SECONDS, function()
 	local fade = TweenService:Create(loader, TweenInfo.new(0.2, Enum.EasingStyle.Quad), {BackgroundTransparency = 1})
 	fade:Play(); fade.Completed:Wait(); loader:Destroy()
 	buildUI()
+end)
+----------------------------------------------------------------
+-- VEHICLES PAGE + controls
+----------------------------------------------------------------
+-- Sidebar button
+local btnVehicles = nil
+do
+    -- Insert the button just above Credits
+    btnVehicles = Instance.new("TextButton")
+    btnVehicles.Text = "Vehicles"
+    btnVehicles.Font = Enum.Font.GothamBold
+    btnVehicles.TextSize = 16
+    btnVehicles.TextColor3 = Color3.new(1,1,1)
+    btnVehicles.Size = UDim2.fromOffset(190, 44)
+    btnVehicles.BackgroundColor3 = Color3.fromRGB(42,42,50)
+    btnVehicles.BorderSizePixel = 0
+    btnVehicles.Parent = sidebar
+    Instance.new("UICorner", btnVehicles).CornerRadius = UDim.new(0,8)
+    btnVehicles.LayoutOrder = btnCredits.LayoutOrder - 1
+end
+
+-- Page
+local pageVehicles = Instance.new("Frame")
+pageVehicles.BackgroundTransparency = 1
+pageVehicles.Size = UDim2.fromScale(1,1)
+pageVehicles.Visible = false
+pageVehicles.Parent = pages
+
+local function showPage(which: Frame)
+    for _,c in ipairs(pages:GetChildren()) do
+        if c:IsA("Frame") then c.Visible = (c==which) end
+    end
+end
+btnVehicles.MouseButton1Click:Connect(function() showPage(pageVehicles) end)
+
+-- UI
+label(pageVehicles, "Vehicles", 22, true, 14, 12)
+local statusV = label(pageVehicles, "Not selected. Sit in a seat or scan.", 14, false, 14, 46, Color3.fromRGB(210,210,220))
+local function setVStatus(t:string, ok:boolean?)
+    statusV.Text = t
+    statusV.TextColor3 = ok and Color3.fromRGB(110,190,120) or Color3.fromRGB(230,170,120)
+end
+
+-- Buttons: pick vehicle
+local pickBtn = makePill(pageVehicles, "Use current seat vehicle", UDim2.fromOffset(14, 76), UDim2.fromOffset(240, 34), pal.accent)
+local scanBtn = makePill(pageVehicles, "Scan nearby (30 studs)",    UDim2.fromOffset(264, 76), UDim2.fromOffset(220, 34), pal.slate)
+
+-- Repaint controls
+label(pageVehicles, "Paint (RGB)", 14, true, 14, 128)
+local rTrack,rFill,rKnob = makeTrack(pageVehicles, 14, 150, 300, Color3.fromRGB(255,90,90))
+local gTrack,gFill,gKnob = makeTrack(pageVehicles, 14, 172, 300, Color3.fromRGB(90,255,90))
+local bTrack,bFill,bKnob = makeTrack(pageVehicles, 14, 194, 300, Color3.fromRGB(90,90,255))
+
+local r,g,b = 255,255,255
+local setR = connectSlider(rTrack,rFill,rKnob,0,255,255,function(v) r=v end)
+local setG = connectSlider(gTrack,gFill,gKnob,0,255,255,function(v) g=v end)
+local setB = connectSlider(bTrack,bFill,bKnob,0,255,255,function(v) b=v end)
+local applyPaintBtn = makePill(pageVehicles, "Apply Color", UDim2.fromOffset(320, 150), UDim2.fromOffset(160, 34), pal.green)
+
+-- Engine / Turbo
+label(pageVehicles, "Engine", 14, true, 14, 238)
+local engTrack,engFill,engKnob = makeTrack(pageVehicles, 14, 260, 300, pal.cyan)
+local engineMult = 1.0
+local setEng = connectSlider(engTrack,engFill,engKnob,10,500,100,function(v) engineMult = v/100 end) -- 0.10–5.00x
+
+local turboBtn = makePill(pageVehicles, "Turbo (hold "..(keybinds.Turbo and keybinds.Turbo.Name or "T")..")", UDim2.fromOffset(320, 260), UDim2.fromOffset(260, 34), pal.accent)
+local brakeBtn = makePill(pageVehicles, "Brake", UDim2.fromOffset(590, 260), UDim2.fromOffset(120, 34), pal.red)
+local nitroBtn = makePill(pageVehicles, "Nitro FX: OFF", UDim2.fromOffset(720, 260), UDim2.fromOffset(140, 34), pal.grayBtn)
+
+-- Turbo keybind reassign
+local turboBindBtn = makePill(pageVehicles, "Bind Turbo Key", UDim2.fromOffset(14, 300), UDim2.fromOffset(160, 30), pal.buttonDark)
+
+-- Selected vehicle refs
+local selectedModel: Model? = nil
+local primary: BasePart? = nil
+local turboOn = false
+local nitroOn = false
+local lv: LinearVelocity? = nil
+local ao: AlignOrientation? = nil
+local att: Attachment? = nil
+local trail: Trail? = nil
+local pe: ParticleEmitter? = nil
+
+local function clearForces()
+    if lv then lv:Destroy(); lv=nil end
+    if ao then ao:Destroy(); ao=nil end
+    if att then att:Destroy(); att=nil end
+end
+local function stopFX()
+    if trail then trail.Enabled=false; trail:Destroy(); trail=nil end
+    if pe then pe.Enabled=false; pe:Destroy(); pe=nil end
+end
+
+local function setVehicle(m: Model?)
+    selectedModel = m
+    primary = nil
+    clearForces()
+    stopFX()
+    if not m then setVStatus("No vehicle selected.", false); return end
+    primary = (m.PrimaryPart or m:FindFirstChildOfClass("BasePart")) :: BasePart?
+    if not primary then setVStatus("Vehicle has no primary part.", false); return end
+    -- try to give player network ownership for smoother turbo (may fail)
+    pcall(function() primary:SetNetworkOwner(player) end)
+    setVStatus("Selected: "..m.Name, true)
+end
+
+local function getSeatVehicle(): Model?
+    local hum = getHumanoid()
+    local seat = hum.SeatPart
+    if seat and seat:IsA("VehicleSeat") then
+        return seat:FindFirstAncestorOfClass("Model")
+    elseif seat and seat:IsA("Seat") then
+        return seat:FindFirstAncestorOfClass("Model")
+    end
+    return nil
+end
+
+local function scanNearby(radius:number): Model?
+    local origin = getHRP().Position
+    local nearest,dist=nil,1e9
+    for _,vs in ipairs(workspace:GetDescendants()) do
+        if vs:IsA("VehicleSeat") or vs:IsA("Seat") then
+            local model = vs:FindFirstAncestorOfClass("Model")
+            if model and model:FindFirstChildOfClass("BasePart") then
+                local d = (vs.Position - origin).Magnitude
+                if d < radius and d < dist then
+                    nearest,dist = model,d
+                end
+            end
+        end
+    end
+    return nearest
+end
+
+pickBtn.MouseButton1Click:Connect(function()
+    local m = getSeatVehicle()
+    if m then setVehicle(m) else setVStatus("Sit in a seat first, then press the button.", false) end
+end)
+scanBtn.MouseButton1Click:Connect(function()
+    local m = scanNearby(30)
+    if m then setVehicle(m) else setVStatus("No seats within 30 studs.", false) end
+end)
+
+-- Paint helper
+local function repaint(model: Model, color: Color3)
+    local count = 0
+    for _,d in ipairs(model:GetDescendants()) do
+        if d:IsA("BasePart") then
+            local ok = pcall(function() d.Color = color end)
+            if ok then count += 1 end
+        end
+    end
+    return count
+end
+applyPaintBtn.MouseButton1Click:Connect(function()
+    if not selectedModel then setVStatus("Pick a vehicle first.", false); return end
+    local c = Color3.fromRGB(r,g,b)
+    local n = repaint(selectedModel, c)
+    if n>0 then setVStatus(("Painted %d parts."):format(n), true)
+    else setVStatus("Could not repaint (server locked).", false) end
+end)
+
+-- Turbo forces
+local function ensureForces()
+    if not (selectedModel and primary) then return end
+    if att and lv and ao then return end
+    att = att or Instance.new("Attachment", primary)
+    lv  = lv  or Instance.new("LinearVelocity")
+    lv.Attachment0 = att
+    lv.MaxForce = 300000 -- boost ceiling (tweak as needed)
+    lv.RelativeTo = Enum.ActuatorRelativeTo.World
+    lv.Parent = primary
+
+    ao = ao or Instance.new("AlignOrientation")
+    ao.Attachment0 = att
+    ao.Mode = Enum.OrientationAlignmentMode.OneAttachment
+    ao.Responsiveness = 10
+    ao.Parent = primary
+end
+
+-- Nitro FX
+local function ensureFX()
+    if not (selectedModel and primary) then return end
+    if trail and pe then return end
+    -- two small attachments for trail on primary
+    local a0 = Instance.new("Attachment"); a0.Name="SM_NitroA0"; a0.Position = Vector3.new(0,  2, -2); a0.Parent = primary
+    local a1 = Instance.new("Attachment"); a1.Name="SM_NitroA1"; a1.Position = Vector3.new(0, -2, -2); a1.Parent = primary
+    trail = Instance.new("Trail")
+    trail.Attachment0 = a0; trail.Attachment1 = a1
+    trail.Lifetime = 0.25; trail.Transparency = NumberSequence.new(0.2,1)
+    trail.MinLength = 0.1
+    trail.Enabled = false
+    trail.Color = ColorSequence.new(Color3.fromRGB(120,200,255))
+    trail.Parent = primary
+
+    pe = Instance.new("ParticleEmitter")
+    pe.Rate = 40
+    pe.Speed = NumberRange.new(12,16)
+    pe.Lifetime = NumberRange.new(0.25,0.4)
+    pe.Size = NumberSequence.new({NumberSequenceKeypoint.new(0,0.7), NumberSequenceKeypoint.new(1,0.1)})
+    pe.Texture = "rbxasset://textures/particles/smoke_main.dds"
+    pe.Transparency = NumberSequence.new(0.2,1)
+    pe.Color = ColorSequence.new(Color3.fromRGB(170,220,255))
+    pe.EmissionDirection = Enum.NormalId.Back
+    pe.Parent = primary
+    pe.Enabled = false
+end
+
+nitroBtn.MouseButton1Click:Connect(function()
+    nitroOn = not nitroOn
+    nitroBtn.Text = nitroOn and "Nitro FX: ON" or "Nitro FX: OFF"
+    nitroBtn.BackgroundColor3 = nitroOn and Color3.fromRGB(60,130,90) or pal.grayBtn
+    if not nitroOn then stopFX() end
+end)
+
+-- Brake
+brakeBtn.MouseButton1Click:Connect(function()
+    if primary then
+        primary.AssemblyLinearVelocity = Vector3.zero
+        primary.AssemblyAngularVelocity = Vector3.zero
+    end
+end)
+
+-- Turbo keybind binding
+local listeningTurbo = false
+turboBindBtn.MouseButton1Click:Connect(function()
+    if listeningTurbo then return end
+    listeningTurbo = true
+    turboBindBtn.Text = "Press a key..."
+    turboBindBtn.BackgroundColor3 = Color3.fromRGB(70,70,30)
+end)
+UIS.InputBegan:Connect(function(inp, gp)
+    if gp then return end
+    if listeningTurbo and inp.UserInputType==Enum.UserInputType.Keyboard then
+        keybinds.Turbo = inp.KeyCode
+        turboBtn.Text = "Turbo (hold "..inp.KeyCode.Name..")"
+        turboBindBtn.Text = "Bind Turbo Key"
+        turboBindBtn.BackgroundColor3 = pal.buttonDark
+        listeningTurbo = false
+    end
+end)
+
+-- Turbo hold logic
+UIS.InputBegan:Connect(function(inp, gp)
+    if gp then return end
+    if inp.UserInputType==Enum.UserInputType.Keyboard and inp.KeyCode == keybinds.Turbo then
+        if not (selectedModel and primary) then return end
+        turboOn = true
+        ensureForces()
+        if nitroOn then ensureFX(); if trail then trail.Enabled = true end; if pe then pe.Enabled=true end end
+    end
+end)
+UIS.InputEnded:Connect(function(inp, gp)
+    if inp.UserInputType==Enum.UserInputType.Keyboard and inp.KeyCode == keybinds.Turbo then
+        turboOn = false
+        if trail then trail.Enabled=false end
+        if pe then pe.Enabled=false end
+        if lv then lv.VectorVelocity = Vector3.zero end
+    end
+end)
+
+-- Apply force each frame while holding
+RunService.Heartbeat:Connect(function(dt)
+    if turboOn and selectedModel and primary and lv and ao then
+        local cam = workspace.CurrentCamera
+        local fwd = cam.CFrame.LookVector
+        -- forward thrust scales with engine multiplier
+        local thrust = 120 * engineMult
+        lv.VectorVelocity = fwd * thrust
+        -- align yaw to camera for smoother boosting
+        local _,y,_ = cam.CFrame:ToOrientation()
+        ao.CFrame = CFrame.fromOrientation(0,y,0)
+    end
+end)
+
+-- Auto-update when you sit in a different seat
+getHumanoid().Seated:Connect(function(active, seatPart)
+    if active and seatPart and (seatPart:IsA("Seat") or seatPart:IsA("VehicleSeat")) then
+        local m = seatPart:FindFirstAncestorOfClass("Model")
+        if m then setVehicle(m) end
+    end
 end)
