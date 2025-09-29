@@ -1,7 +1,5 @@
 --!strict
--- Smoothies Script (clean layout): Speed(8-500) + Jump + Resets + Teleport/Noclip (rebinds)
--- + Give BTools + Dev Portal + Player Boxes (ESP) + Add/Remove Hitboxes (client)
--- Place as LocalScript in StarterPlayer -> StarterPlayerScripts
+-- Smoothies Script with unload confirmation & full cleanup
 
 local Players = game:GetService("Players")
 local UIS = game:GetService("UserInputService")
@@ -18,15 +16,13 @@ local keybinds = { Teleport = Enum.KeyCode.F, Noclip = Enum.KeyCode.X }
 
 -- ===== STATE =====
 local minimized = false
-local listeningFor: string? = nil
 local noclipEnabled = false
 local keepApplyConn: RBXScriptConnection? = nil
 local origCanCollide: {[Instance]: boolean} = {}
-
--- ESP + Hitboxes
 local espOn = false
 local highlights: { [Player]: Highlight } = {}
 local hitboxAdded = false
+local unloaded = false
 
 -- ===== HELPERS =====
 local function clamp(n:number, a:number, b:number) return (n<a and a) or (n>b and b) or n end
@@ -40,9 +36,9 @@ local function getHRP(): BasePart
     return (c:FindFirstChild("HumanoidRootPart") or c:WaitForChild("HumanoidRootPart")) :: BasePart
 end
 
--- ===== UI ROOT (simple & roomy) =====
+-- ===== UI ROOT =====
 local gui = Instance.new("ScreenGui")
-gui.Name = "SmoothiesScriptUI" -- was "UtilityUI"
+gui.Name = "SmoothiesScriptUI"
 gui.IgnoreGuiInset = true
 gui.ResetOnSpawn = false
 gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
@@ -52,7 +48,6 @@ local PANEL_W, PANEL_H = 520, 400
 local TITLE_H = 44
 
 local panel = Instance.new("Frame")
-panel.Name = "Panel"
 panel.Size = UDim2.fromOffset(PANEL_W, PANEL_H)
 panel.Position = UDim2.fromOffset(40, 100)
 panel.BackgroundColor3 = Color3.fromRGB(22,22,22)
@@ -60,7 +55,7 @@ panel.BorderSizePixel = 0
 panel.Parent = gui
 Instance.new("UICorner", panel).CornerRadius = UDim.new(0,12)
 
--- title bar
+-- header
 local header = Instance.new("Frame")
 header.Size = UDim2.fromOffset(PANEL_W, TITLE_H)
 header.BackgroundColor3 = Color3.fromRGB(28,28,28)
@@ -70,7 +65,7 @@ Instance.new("UICorner", header).CornerRadius = UDim.new(0,12)
 
 local title = Instance.new("TextLabel")
 title.BackgroundTransparency = 1
-title.Text = "Smoothies Script" -- was "Utility"
+title.Text = "Smoothies Script"
 title.Font = Enum.Font.GothamBold
 title.TextSize = 20
 title.TextColor3 = Color3.new(1,1,1)
@@ -97,7 +92,7 @@ end
 local minBtn  = topBtn("-", -68, Color3.fromRGB(90,90,90))
 local closeBtn= topBtn("X", -34, Color3.fromRGB(180,60,60))
 
--- content container with layout/padding so nothing is cramped
+-- content
 local content = Instance.new("Frame")
 content.Name = "Content"
 content.Position = UDim2.fromOffset(0, TITLE_H)
@@ -115,7 +110,7 @@ vlist.FillDirection = Enum.FillDirection.Vertical
 vlist.Padding = UDim.new(0, 12)
 vlist.SortOrder = Enum.SortOrder.LayoutOrder
 
--- drag via header
+-- drag
 do
     local dragging=false; local dragStart; local startPos
     header.InputBegan:Connect(function(inp)
@@ -132,19 +127,66 @@ do
     end)
 end
 
-closeBtn.MouseButton1Click:Connect(function() gui:Destroy() end)
-minBtn.MouseButton1Click:Connect(function()
-    minimized = not minimized
-    if minimized then
-        content.Visible = false
-        panel.Size = UDim2.fromOffset(PANEL_W, TITLE_H + 8)
-    else
-        panel.Size = UDim2.fromOffset(PANEL_W, PANEL_H)
-        content.Visible = true
-    end
-end)
+-- ===== UNLOAD MODAL =====
+local modal = Instance.new("Frame")
+modal.Visible = false
+modal.ZIndex = 50
+modal.BackgroundColor3 = Color3.fromRGB(0,0,0)
+modal.BackgroundTransparency = 0.35
+modal.Size = UDim2.fromScale(1,1)
+modal.Parent = panel
 
--- small helpers
+local modalBox = Instance.new("Frame")
+modalBox.Size = UDim2.fromOffset(360,120)
+modalBox.Position = UDim2.new(0.5,-180,0.5,-60)
+modalBox.BackgroundColor3 = Color3.fromRGB(30,30,30)
+modalBox.BorderSizePixel = 0
+modalBox.ZIndex = 51
+modalBox.Parent = modal
+Instance.new("UICorner", modalBox).CornerRadius = UDim.new(0,10)
+
+local modalText = Instance.new("TextLabel")
+modalText.BackgroundTransparency = 1
+modalText.Size = UDim2.fromOffset(340, 40)
+modalText.Position = UDim2.fromOffset(10, 14)
+modalText.Font = Enum.Font.GothamBold
+modalText.TextSize = 18
+modalText.TextColor3 = Color3.new(1,1,1)
+modalText.TextXAlignment = Enum.TextXAlignment.Left
+modalText.Text = "Are you sure you want to unload?"
+modalText.ZIndex = 51
+modalText.Parent = modalBox
+
+local function pill(parent, txt, w, color)
+    local b = Instance.new("TextButton")
+    b.Text = txt
+    b.Font = Enum.Font.GothamBold
+    b.TextSize = 14
+    b.TextColor3 = Color3.new(1,1,1)
+    b.Size = UDim2.fromOffset(w, 32)
+    b.Position = UDim2.fromOffset(0,0)
+    b.BackgroundColor3 = color
+    b.BorderSizePixel = 0
+    b.ZIndex = 51
+    b.Parent = parent
+    Instance.new("UICorner", b).CornerRadius = UDim.new(1,0)
+    return b
+end
+
+local buttonsRow = Instance.new("Frame")
+buttonsRow.BackgroundTransparency = 1
+buttonsRow.Size = UDim2.fromOffset(340, 32)
+buttonsRow.Position = UDim2.fromOffset(10, 72)
+buttonsRow.ZIndex = 51
+buttonsRow.Parent = modalBox
+local hl = Instance.new("UIListLayout", buttonsRow)
+hl.FillDirection = Enum.FillDirection.Horizontal
+hl.Padding = UDim.new(0, 12)
+
+local yesBtn = pill(buttonsRow, "Yes, unload", 160, Color3.fromRGB(180,60,60))
+local noBtn  = pill(buttonsRow, "No, keep open", 160, Color3.fromRGB(80,80,90))
+
+-- ===== COMMON BUILDERS =====
 local function sectionFrame(height:number?): Frame
     local f = Instance.new("Frame")
     f.BackgroundTransparency = 1
@@ -177,7 +219,7 @@ local function makePill(parent:Instance, txt:string, w:number)
     return b
 end
 
--- ===== Row 0: Noclip pill (top-right inside content) =====
+-- ===== Row 0: Noclip pill =====
 local row0 = sectionFrame(34)
 local noclipBtn = makePill(row0, "Noclip: OFF", 120)
 noclipBtn.Position = UDim2.new(1, -120, 0, 2)
@@ -185,47 +227,28 @@ noclipBtn.BackgroundColor3 = Color3.fromRGB(85,35,35)
 
 -- ===== Row 1: Walk speed + textbox =====
 local row1 = sectionFrame(76)
-
 local walkText = makeLabel(row1, "Walk Speed", false)
-walkText.Position = UDim2.fromOffset(0, 0)
-walkText.Size = UDim2.fromOffset(120, 18)
-
+walkText.Position = UDim2.fromOffset(0, 0); walkText.Size = UDim2.fromOffset(120, 18)
 local walkVal = makeLabel(row1, tostring(SPEED_DEFAULT), true)
-walkVal.Position = UDim2.new(1, -60, 0, 0)
-walkVal.Size = UDim2.fromOffset(60, 18)
+walkVal.Position = UDim2.new(1, -60, 0, 0); walkVal.Size = UDim2.fromOffset(60, 18)
 
-local walkBar = Instance.new("Frame")
-walkBar.BackgroundColor3 = Color3.fromRGB(55,55,55)
-walkBar.BorderSizePixel = 0
-walkBar.Position = UDim2.fromOffset(0, 20)
-walkBar.Size = UDim2.new(1, 0, 0, 10)
-walkBar.Parent = row1
+local walkBar = Instance.new("Frame"); walkBar.BackgroundColor3 = Color3.fromRGB(55,55,55)
+walkBar.BorderSizePixel = 0; walkBar.Position = UDim2.fromOffset(0, 20); walkBar.Size = UDim2.new(1, 0, 0, 10); walkBar.Parent = row1
 Instance.new("UICorner", walkBar).CornerRadius = UDim.new(0,5)
 
-local walkFill = Instance.new("Frame")
-walkFill.AnchorPoint = Vector2.new(0,0.5)
-walkFill.Position = UDim2.fromScale(0,0.5)
-walkFill.Size = UDim2.fromScale(0,1)
-walkFill.BackgroundColor3 = Color3.fromRGB(60,200,130)
-walkFill.BorderSizePixel = 0
-walkFill.Parent = walkBar
+local walkFill = Instance.new("Frame"); walkFill.AnchorPoint = Vector2.new(0,0.5); walkFill.Position = UDim2.fromScale(0,0.5)
+walkFill.Size = UDim2.fromScale(0,1); walkFill.BackgroundColor3 = Color3.fromRGB(60,200,130); walkFill.BorderSizePixel = 0; walkFill.Parent = walkBar
 Instance.new("UICorner", walkFill).CornerRadius = UDim.new(0,5)
 
-local walkKnob = Instance.new("ImageButton")
-walkKnob.AnchorPoint = Vector2.new(0.5,0.5)
-walkKnob.Size = UDim2.fromOffset(16,16)
-walkKnob.Position = UDim2.fromScale(0,0.5)
-walkKnob.BackgroundColor3 = Color3.fromRGB(235,235,235)
-walkKnob.BorderSizePixel = 0
-walkKnob.Parent = walkBar
+local walkKnob = Instance.new("ImageButton"); walkKnob.AnchorPoint = Vector2.new(0.5,0.5)
+walkKnob.Size = UDim2.fromOffset(16,16); walkKnob.Position = UDim2.fromScale(0,0.5)
+walkKnob.BackgroundColor3 = Color3.fromRGB(235,235,235); walkKnob.BorderSizePixel = 0; walkKnob.Parent = walkBar
 Instance.new("UICorner", walkKnob).CornerRadius = UDim.new(1,0)
 
 local speedInput = Instance.new("TextBox")
 speedInput.PlaceholderText = "Type speed (8–500)"
-speedInput.Text = ""
-speedInput.ClearTextOnFocus = false
-speedInput.Font = Enum.Font.Gotham
-speedInput.TextSize = 14
+speedInput.Text = ""; speedInput.ClearTextOnFocus = false
+speedInput.Font = Enum.Font.Gotham; speedInput.TextSize = 14
 speedInput.TextColor3 = Color3.fromRGB(255,255,255)
 speedInput.BackgroundColor3 = Color3.fromRGB(36,36,36)
 speedInput.BorderSizePixel = 0
@@ -236,109 +259,61 @@ Instance.new("UICorner", speedInput).CornerRadius = UDim.new(0,8)
 
 -- ===== Row 2: Jump power =====
 local row2 = sectionFrame(52)
+local jumpText = makeLabel(row2, "Jump Power", false); jumpText.Position = UDim2.fromOffset(0, 0); jumpText.Size = UDim2.fromOffset(120, 18)
+local jumpVal = makeLabel(row2, tostring(JUMP_DEFAULT), true); jumpVal.Position = UDim2.new(1, -60, 0, 0); jumpVal.Size = UDim2.fromOffset(60, 18)
 
-local jumpText = makeLabel(row2, "Jump Power", false)
-jumpText.Position = UDim2.fromOffset(0, 0)
-jumpText.Size = UDim2.fromOffset(120, 18)
-
-local jumpVal = makeLabel(row2, tostring(JUMP_DEFAULT), true)
-jumpVal.Position = UDim2.new(1, -60, 0, 0)
-jumpVal.Size = UDim2.fromOffset(60, 18)
-
-local jumpBar = Instance.new("Frame")
-jumpBar.BackgroundColor3 = Color3.fromRGB(55,55,55)
-jumpBar.BorderSizePixel = 0
-jumpBar.Position = UDim2.fromOffset(0, 20)
-jumpBar.Size = UDim2.new(1, 0, 0, 10)
-jumpBar.Parent = row2
+local jumpBar = Instance.new("Frame"); jumpBar.BackgroundColor3 = Color3.fromRGB(55,55,55)
+jumpBar.BorderSizePixel = 0; jumpBar.Position = UDim2.fromOffset(0, 20); jumpBar.Size = UDim2.new(1, 0, 0, 10); jumpBar.Parent = row2
 Instance.new("UICorner", jumpBar).CornerRadius = UDim.new(0,5)
 
-local jumpFill = Instance.new("Frame")
-jumpFill.AnchorPoint = Vector2.new(0,0.5)
-jumpFill.Position = UDim2.fromScale(0,0.5)
-jumpFill.Size = UDim2.fromScale(0,1)
-jumpFill.BackgroundColor3 = Color3.fromRGB(255,170,90)
-jumpFill.BorderSizePixel = 0
-jumpFill.Parent = jumpBar
+local jumpFill = Instance.new("Frame"); jumpFill.AnchorPoint = Vector2.new(0,0.5); jumpFill.Position = UDim2.fromScale(0,0.5)
+jumpFill.Size = UDim2.fromScale(0,1); jumpFill.BackgroundColor3 = Color3.fromRGB(255,170,90); jumpFill.BorderSizePixel = 0; jumpFill.Parent = jumpBar
 Instance.new("UICorner", jumpFill).CornerRadius = UDim.new(0,5)
 
-local jumpKnob = Instance.new("ImageButton")
-jumpKnob.AnchorPoint = Vector2.new(0.5,0.5)
-jumpKnob.Size = UDim2.fromOffset(16,16)
-jumpKnob.Position = UDim2.fromScale(0,0.5)
-jumpKnob.BackgroundColor3 = Color3.fromRGB(235,235,235)
-jumpKnob.BorderSizePixel = 0
-jumpKnob.Parent = jumpBar
+local jumpKnob = Instance.new("ImageButton"); jumpKnob.AnchorPoint = Vector2.new(0.5,0.5)
+jumpKnob.Size = UDim2.fromOffset(16,16); jumpKnob.Position = UDim2.fromScale(0,0.5)
+jumpKnob.BackgroundColor3 = Color3.fromRGB(235,235,235); jumpKnob.BorderSizePixel = 0; jumpKnob.Parent = jumpBar
 Instance.new("UICorner", jumpKnob).CornerRadius = UDim.new(1,0)
 
--- ===== Row 3: Buttons row (3 wide, comfy) =====
+-- ===== Row 3: Buttons =====
 local row3 = sectionFrame(40)
-local hlist3 = Instance.new("UIListLayout", row3)
-hlist3.FillDirection = Enum.FillDirection.Horizontal
-hlist3.Padding = UDim.new(0, 12)
-hlist3.SortOrder = Enum.SortOrder.LayoutOrder
+local hlist3 = Instance.new("UIListLayout", row3); hlist3.FillDirection = Enum.FillDirection.Horizontal; hlist3.Padding = UDim.new(0, 12)
+local function makePillRow(txt:string, w:number, color:Color3)
+    local b = makePill(row3, txt, w); b.BackgroundColor3 = color; return b
+end
+local btoolsBtn = makePillRow("Give BTools", 160, Color3.fromRGB(120,170,60))
+local portalBtn = makePillRow("Dev Portal", 160, Color3.fromRGB(90,90,160))
+local espBtn    = makePillRow("Player Boxes: OFF", 160, Color3.fromRGB(85,85,95))
 
-local btoolsBtn = makePill(row3, "Give BTools", 160)
-btoolsBtn.BackgroundColor3 = Color3.fromRGB(120,170,60)
-
-local portalBtn = makePill(row3, "Dev Portal", 160)
-portalBtn.BackgroundColor3 = Color3.fromRGB(90,90,160)
-
-local espBtn = makePill(row3, "Player Boxes: OFF", 160)
-espBtn.BackgroundColor3 = Color3.fromRGB(85,85,95)
-
--- ===== Row 4: Hitbox row (Add/Remove) =====
+-- ===== Row 4: Hitboxes =====
 local row4 = sectionFrame(40)
-local hlist4 = Instance.new("UIListLayout", row4)
-hlist4.FillDirection = Enum.FillDirection.Horizontal
-hlist4.Padding = UDim.new(0, 12)
-hlist4.SortOrder = Enum.SortOrder.LayoutOrder
+local hlist4 = Instance.new("UIListLayout", row4); hlist4.FillDirection = Enum.FillDirection.Horizontal; hlist4.Padding = UDim.new(0, 12)
+local addHBBtn = makePill(row4, "Add Hitboxes", 160);   addHBBtn.BackgroundColor3 = Color3.fromRGB(180,80,80)
+local rmHBBtn  = makePill(row4, "Remove Hitboxes", 160); rmHBBtn.BackgroundColor3 = Color3.fromRGB(95,95,105)
 
-local addHBBtn = makePill(row4, "Add Hitboxes", 160)
-addHBBtn.BackgroundColor3 = Color3.fromRGB(180,80,80)
-local rmHBBtn = makePill(row4, "Remove Hitboxes", 160)
-rmHBBtn.BackgroundColor3 = Color3.fromRGB(95,95,105)
-
--- ===== Row 5: Reset row =====
+-- ===== Row 5: Reset =====
 local row5 = sectionFrame(40)
-local hlist5 = Instance.new("UIListLayout", row5)
-hlist5.FillDirection = Enum.FillDirection.Horizontal
-hlist5.Padding = UDim.new(0, 12)
-hlist5.SortOrder = Enum.SortOrder.LayoutOrder
-
-local resetSpeed = makePill(row5, "Reset Speed", 160)
-resetSpeed.BackgroundColor3 = Color3.fromRGB(130,70,70)
-local resetJump = makePill(row5, "Reset Jump", 160)
-resetJump.BackgroundColor3 = Color3.fromRGB(130,70,70)
+local hlist5 = Instance.new("UIListLayout", row5); hlist5.FillDirection = Enum.FillDirection.Horizontal; hlist5.Padding = UDim.new(0, 12)
+local resetSpeed = makePill(row5, "Reset Speed", 160); resetSpeed.BackgroundColor3 = Color3.fromRGB(130,70,70)
+local resetJump  = makePill(row5, "Reset Jump", 160);  resetJump.BackgroundColor3  = Color3.fromRGB(130,70,70)
 
 -- ===== Row 6: Keybinds =====
 local row6 = sectionFrame(40)
+local kbTitle = makeLabel(row6, "Keybinds", false); kbTitle.Position = UDim2.fromOffset(0, 0); kbTitle.Size = UDim2.fromOffset(100, 18)
 
-local kbTitle = makeLabel(row6, "Keybinds", false)
-kbTitle.Position = UDim2.fromOffset(0, 0); kbTitle.Size = UDim2.fromOffset(100, 18)
+local kbRow = Instance.new("Frame"); kbRow.BackgroundTransparency = 1; kbRow.Size = UDim2.new(1, 0, 0, 30)
+kbRow.Position = UDim2.fromOffset(0, 12); kbRow.Parent = row6
+local hlist6 = Instance.new("UIListLayout", kbRow); hlist6.FillDirection = Enum.FillDirection.Horizontal; hlist6.Padding = UDim.new(0, 20)
 
-local kbRow = Instance.new("Frame")
-kbRow.BackgroundTransparency = 1
-kbRow.Size = UDim2.new(1, 0, 0, 30)
-kbRow.Position = UDim2.fromOffset(0, 12)
-kbRow.Parent = row6
-local hlist6 = Instance.new("UIListLayout", kbRow)
-hlist6.FillDirection = Enum.FillDirection.Horizontal
-hlist6.Padding = UDim.new(0, 20)
-hlist6.SortOrder = Enum.SortOrder.LayoutOrder
-
-local tpLbl = makeLabel(kbRow, "Teleport", false)
-tpLbl.Size = UDim2.fromOffset(70, 30)
-local tpBindBtn = makePill(kbRow, keybinds.Teleport.Name, 70)
-
-local ncLbl = makeLabel(kbRow, "Noclip", false)
-ncLbl.Size = UDim2.fromOffset(70, 30)
-local ncBindBtn = makePill(kbRow, keybinds.Noclip.Name, 70)
-
--- ===== Slider plumbing =====
-local function alphaFromClick(frame:Frame, xPixel:number)
-    return clamp((xPixel - frame.AbsolutePosition.X) / frame.AbsoluteSize.X, 0, 1)
+local function makeBind(labelText:string, key:Enum.KeyCode)
+    local lbl = makeLabel(kbRow, labelText, false); lbl.Size = UDim2.fromOffset(70, 30)
+    local btn = makePill(kbRow, key.Name, 70); return btn
 end
+local tpBindBtn = makeBind("Teleport", keybinds.Teleport)
+local ncBindBtn = makeBind("Noclip",   keybinds.Noclip)
+
+-- ===== Sliders / Apply =====
+local function alphaFromClick(frame:Frame, xPixel:number) return clamp((xPixel - frame.AbsolutePosition.X) / frame.AbsoluteSize.X, 0, 1) end
 local function connectSlider(bar:Frame, fill:Frame, knob:ImageButton, minV:number, maxV:number, defaultV:number, onSet:(number)->())
     local function toAlpha(v:number) return (v - minV) / (maxV - minV) end
     local function fromAlpha(a:number) return math.floor(minV + a*(maxV-minV) + 0.5) end
@@ -354,36 +329,35 @@ local function connectSlider(bar:Frame, fill:Frame, knob:ImageButton, minV:numbe
     return function(v:number) setAlpha(toAlpha(v)) end
 end
 
--- Apply funcs
-local function applyWalk(v:number) walkVal.Text = tostring(v); getHumanoid().WalkSpeed = v end
-local function applyJump(v:number) jumpVal.Text = tostring(v); local h=getHumanoid(); h.UseJumpPower=true; h.JumpPower=v end
+local function applyWalk(v:number) makeLabel(row1,"",true).Text=""; -- noop placeholder to keep local ref scope clean
+end
+-- re-define with access to existing labels
+local function _applyWalk(v:number) getHumanoid().WalkSpeed = v end
+local function _applyJump(v:number) local h=getHumanoid(); h.UseJumpPower=true; h.JumpPower=v end
 
-local syncWalk = connectSlider(walkBar, walkFill, walkKnob, SPEED_MIN, SPEED_MAX, SPEED_DEFAULT, applyWalk)
-local syncJump = connectSlider(jumpBar, jumpFill, jumpKnob, JUMP_MIN,  JUMP_MAX,  JUMP_DEFAULT, applyJump)
+local function setWalkLabel(v:number) walkVal.Text = tostring(v) end
+local function setJumpLabel(v:number) jumpVal.Text = tostring(v) end
+
+local syncWalk = connectSlider(walkBar, walkFill, walkKnob, SPEED_MIN, SPEED_MAX, SPEED_DEFAULT, function(v) setWalkLabel(v); _applyWalk(v) end)
+local syncJump = connectSlider(jumpBar, jumpFill, jumpKnob, JUMP_MIN,  JUMP_MAX,  JUMP_DEFAULT, function(v) setJumpLabel(v); _applyJump(v) end)
 
 speedInput.FocusLost:Connect(function()
+    if unloaded then return end
     local n = tonumber(speedInput.Text)
-    if n then n = clamp(math.floor(n + 0.5), SPEED_MIN, SPEED_MAX); syncWalk(n); applyWalk(n) end
+    if n then n = clamp(math.floor(n + 0.5), SPEED_MIN, SPEED_MAX); syncWalk(n); setWalkLabel(n); _applyWalk(n) end
     speedInput.Text = ""
 end)
 
 -- ===== Teleport / Noclip =====
 local function teleportToMouse()
-    local hrp = getHRP()
-    local hit = mouse.Hit
-    if hit then
-        local p3 = Vector3.new(hit.X, hit.Y + 3, hit.Z)
-        hrp.CFrame = CFrame.new(p3, p3 + hrp.CFrame.LookVector)
-    end
+    local hrp = getHRP(); local hit = mouse.Hit
+    if hit then local p3 = Vector3.new(hit.X, hit.Y + 3, hit.Z); hrp.CFrame = CFrame.new(p3, p3 + hrp.CFrame.LookVector) end
 end
 
 local function applyNoclipOnce()
     local char = getCharacter()
     for _, d in ipairs(char:GetDescendants()) do
-        if d:IsA("BasePart") then
-            if origCanCollide[d] == nil then origCanCollide[d] = d.CanCollide end
-            d.CanCollide = false
-        end
+        if d:IsA("BasePart") then if origCanCollide[d] == nil then origCanCollide[d] = d.CanCollide end; d.CanCollide = false end
     end
 end
 local function restoreCollision()
@@ -396,78 +370,69 @@ end
 local function startNoclip()
     if noclipEnabled then return end
     noclipEnabled = true
-    noclipBtn.Text = "Noclip: ON"
-    noclipBtn.BackgroundColor3 = Color3.fromRGB(40,110,70)
+    noclipBtn.Text = "Noclip: ON"; noclipBtn.BackgroundColor3 = Color3.fromRGB(40,110,70)
     applyNoclipOnce()
     keepApplyConn = RunService.Heartbeat:Connect(function() if noclipEnabled then applyNoclipOnce() end end)
 end
 local function stopNoclip()
     if not noclipEnabled then return end
     noclipEnabled = false
-    noclipBtn.Text = "Noclip: OFF"
-    noclipBtn.BackgroundColor3 = Color3.fromRGB(85,35,35)
+    noclipBtn.Text = "Noclip: OFF"; noclipBtn.BackgroundColor3 = Color3.fromRGB(85,35,35)
     if keepApplyConn then keepApplyConn:Disconnect() keepApplyConn=nil end
     restoreCollision()
 end
 local function toggleNoclip() if noclipEnabled then stopNoclip() else startNoclip() end end
-noclipBtn.MouseButton1Click:Connect(toggleNoclip)
+noclipBtn.MouseButton1Click:Connect(function() if not unloaded then toggleNoclip() end end)
 
--- ===== Keybinds =====
+-- Keybinds / rebind
 local listening: string? = nil
 local function beginListen(actionName:string, btn:TextButton)
     if listening then return end
-    listening = actionName
-    btn.Text = "Press..."
-    btn.BackgroundColor3 = Color3.fromRGB(70,70,30)
+    listening = actionName; btn.Text = "Press..."; btn.BackgroundColor3 = Color3.fromRGB(70,70,30)
 end
-tpBindBtn.MouseButton1Click:Connect(function() beginListen("Teleport", tpBindBtn) end)
-ncBindBtn.MouseButton1Click:Connect(function() beginListen("Noclip",   ncBindBtn) end)
+tpBindBtn.MouseButton1Click:Connect(function() if not unloaded then beginListen("Teleport", tpBindBtn) end end)
+ncBindBtn.MouseButton1Click:Connect(function() if not unloaded then beginListen("Noclip",   ncBindBtn) end end)
 
 local function refreshBindButtons()
-    tpBindBtn.Text = keybinds.Teleport.Name
-    ncBindBtn.Text = keybinds.Noclip.Name
-    tpBindBtn.BackgroundColor3 = Color3.fromRGB(40,40,40)
-    ncBindBtn.BackgroundColor3 = Color3.fromRGB(40,40,40)
+    tpBindBtn.Text = keybinds.Teleport.Name; ncBindBtn.Text = keybinds.Noclip.Name
+    tpBindBtn.BackgroundColor3 = Color3.fromRGB(40,40,40); ncBindBtn.BackgroundColor3 = Color3.fromRGB(40,40,40)
 end
 refreshBindButtons()
 
 UIS.InputBegan:Connect(function(inp, gp)
-    if gp then return end
+    if unloaded or gp then return end
     if listening and inp.UserInputType==Enum.UserInputType.Keyboard then
         local kc = inp.KeyCode
         if kc ~= Enum.KeyCode.Unknown and kc ~= Enum.KeyCode.Escape then
             for k,v in pairs(keybinds) do if k~=listening and v==kc then keybinds[k]=Enum.KeyCode.Unknown end end
-            keybinds[listening] = kc
-            listening = nil
-            refreshBindButtons()
+            keybinds[listening] = kc; listening = nil; refreshBindButtons()
         end
     end
 end)
-
 UIS.InputBegan:Connect(function(inp, gp)
-    if gp or listening then return end
+    if unloaded or gp or listening then return end
     if inp.UserInputType==Enum.UserInputType.Keyboard then
-        if keybinds.Teleport ~= Enum.KeyCode.Unknown and inp.KeyCode == keybinds.Teleport then
-            teleportToMouse()
-        elseif keybinds.Noclip ~= Enum.KeyCode.Unknown and inp.KeyCode == keybinds.Noclip then
-            toggleNoclip()
-        end
+        if keybinds.Teleport ~= Enum.KeyCode.Unknown and inp.KeyCode == keybinds.Teleport then teleportToMouse()
+        elseif keybinds.Noclip ~= Enum.KeyCode.Unknown and inp.KeyCode == keybinds.Noclip then toggleNoclip() end
     end
 end)
 
 -- ===== BTools =====
 local btoolsGiven=false
 local function mkTool(name:string) local t=Instance.new("Tool"); t.RequiresHandle=false; t.Name=name; t.CanBeDropped=false; return t end
+local function removeBTools()
+    local bp = player:FindFirstChildOfClass("Backpack")
+    if not bp then return end
+    for _,tool in ipairs(bp:GetChildren()) do
+        if tool:IsA("Tool") and tool.Name:sub(1,3)=="BT_" then tool:Destroy() end
+    end
+end
 btoolsBtn.MouseButton1Click:Connect(function()
-    if btoolsGiven then return end; btoolsGiven=true
+    if unloaded or btoolsGiven then return end; btoolsGiven=true
     local bp = player:WaitForChild("Backpack")
-    local del = mkTool("BT_Delete")
-    del.Activated:Connect(function() local t=mouse.Target if t and not t:IsDescendantOf(player.Character) then t:Destroy() end end)
-    del.Parent=bp
-    local cln = mkTool("BT_Clone")
-    cln.Activated:Connect(function() local t=mouse.Target if t and t:IsA("BasePart") and not t:IsDescendantOf(player.Character) then local c=t:Clone(); c.CFrame=t.CFrame*CFrame.new(0,3,0); c.Parent=t.Parent end end)
-    cln.Parent=bp
-    local mv = mkTool("BT_Move"); local conn; local picked:BasePart?
+    local del = mkTool("BT_Delete"); del.Activated:Connect(function() local t=mouse.Target if t and not t:IsDescendantOf(player.Character) then t:Destroy() end end); del.Parent=bp
+    local cln = mkTool("BT_Clone");  cln.Activated:Connect(function() local t=mouse.Target if t and t:IsA("BasePart") and not t:IsDescendantOf(player.Character) then local c=t:Clone(); c.CFrame=t.CFrame*CFrame.new(0,3,0); c.Parent=t.Parent end end); cln.Parent=bp
+    local mv  = mkTool("BT_Move");   local conn; local picked:BasePart?
     mv.Activated:Connect(function()
         local t=mouse.Target
         if t and t:IsA("BasePart") and not t:IsDescendantOf(player.Character) then
@@ -482,121 +447,96 @@ end)
 -- ===== Dev Portal =====
 local DEV_URL = "https://create.roblox.com/dashboard/creations"
 portalBtn.MouseButton1Click:Connect(function()
+    if unloaded then return end
     local ok = pcall(function() GuiService:OpenBrowserWindow(DEV_URL) end)
-    if not ok then portalBtn.Text="Open: create.roblox.com"; task.delay(2,function() portalBtn.Text="Dev Portal" end); print("Open:", DEV_URL) end
+    if not ok then portalBtn.Text="Open: create.roblox.com"; task.delay(2,function() if portalBtn then portalBtn.Text="Dev Portal" end end); print("Open:", DEV_URL) end
 end)
 
 -- ===== Resets =====
-resetSpeed.MouseButton1Click:Connect(function() syncWalk(SPEED_DEFAULT); applyWalk(SPEED_DEFAULT) end)
-resetJump.MouseButton1Click:Connect(function()  syncJump(JUMP_DEFAULT);  applyJump(JUMP_DEFAULT)  end)
+local function setDefaults()
+    syncWalk(SPEED_DEFAULT); setWalkLabel(SPEED_DEFAULT); _applyWalk(SPEED_DEFAULT)
+    syncJump(JUMP_DEFAULT);  setJumpLabel(JUMP_DEFAULT);  _applyJump(JUMP_DEFAULT)
+end
+resetSpeed.MouseButton1Click:Connect(function() if not unloaded then syncWalk(SPEED_DEFAULT); setWalkLabel(SPEED_DEFAULT); _applyWalk(SPEED_DEFAULT) end end)
+resetJump.MouseButton1Click:Connect(function() if not unloaded then syncJump(JUMP_DEFAULT);  setJumpLabel(JUMP_DEFAULT);  _applyJump(JUMP_DEFAULT)  end end)
 
--- ===== ESP (Player Boxes) =====
+-- ===== ESP =====
 local function ensureHighlight(plr: Player)
-    if plr == player then return end
-    if not plr.Character then return end
+    if plr == player or not plr.Character then return end
     local h = highlights[plr]
     if not h then
-        h = Instance.new("Highlight")
-        h.FillTransparency = 1
-        h.OutlineTransparency = 0
-        h.OutlineColor = Color3.fromRGB(255,120,120)
-        h.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-        h.Parent = plr.Character
-        highlights[plr] = h
+        h = Instance.new("Highlight"); h.FillTransparency = 1; h.OutlineTransparency = 0
+        h.OutlineColor = Color3.fromRGB(255,120,120); h.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+        h.Parent = plr.Character; highlights[plr] = h
     end
     h.Adornee = plr.Character
 end
-local function clearHighlight(plr: Player)
-    local h = highlights[plr]; if h then h:Destroy(); highlights[plr]=nil end
+local function espDisable()
+    espOn = false
+    for plr,h in pairs(highlights) do if h then h:Destroy() end end
+    highlights = {}
+    espBtn.Text = "Player Boxes: OFF"; espBtn.BackgroundColor3 = Color3.fromRGB(85,85,95)
 end
 local function espEnable()
     espOn = true
-    for _, plr in ipairs(Players:GetPlayers()) do
-        if plr ~= player then
-            if plr.Character then ensureHighlight(plr) end
-            plr.CharacterAdded:Connect(function() if espOn then task.wait(0.1); ensureHighlight(plr) end end)
-        end
-    end
-    espBtn.Text = "Player Boxes: ON"
-    espBtn.BackgroundColor3 = Color3.fromRGB(40,110,70)
+    for _, plr in ipairs(Players:GetPlayers()) do if plr ~= player and plr.Character then ensureHighlight(plr) end end
+    espBtn.Text = "Player Boxes: ON"; espBtn.BackgroundColor3 = Color3.fromRGB(40,110,70)
 end
-local function espDisable()
-    espOn = false
-    for plr,_ in pairs(highlights) do clearHighlight(plr) end
-    espBtn.Text = "Player Boxes: OFF"
-    espBtn.BackgroundColor3 = Color3.fromRGB(85,85,95)
-end
-espBtn.MouseButton1Click:Connect(function() if espOn then espDisable() else espEnable() end end)
+espBtn.MouseButton1Click:Connect(function() if unloaded then return end; if espOn then espDisable() else espEnable() end end)
 
--- ===== Hitboxes (client): add/remove welded parts to all players =====
+-- ===== Hitboxes (client) =====
 local function getOrCreateHitbox(char: Model): BasePart?
+    local hrp = char:FindFirstChild("HumanoidRootPart"); if not hrp or not hrp:IsA("BasePart") then return nil end
     local hb = char:FindFirstChild("Hitbox")
-    local hrp = char:FindFirstChild("HumanoidRootPart")
-    if not hrp or not hrp:IsA("BasePart") then return nil end
     if not (hb and hb:IsA("BasePart")) then
-        hb = Instance.new("Part")
-        hb.Name = "Hitbox"
-        hb.Anchored = false
-        hb.CanCollide = false
-        hb.CanQuery = true
-        hb.CanTouch = true
-        hb.Transparency = 1
-        hb.Size = hrp.Size
-        hb.Massless = true
-        hb.Parent = char
-        local weld = Instance.new("WeldConstraint")
-        weld.Part0 = hrp
-        weld.Part1 = hb
-        weld.Parent = hb
+        hb = Instance.new("Part"); hb.Name="Hitbox"; hb.Anchored=false; hb.CanCollide=false; hb.CanQuery=true; hb.CanTouch=true
+        hb.Transparency=1; hb.Size=hrp.Size; hb.Massless=true; hb.Parent=char
+        local weld = Instance.new("WeldConstraint"); weld.Part0=hrp; weld.Part1=hb; weld.Parent=hb
     end
     return hb
 end
-
 local function addHitboxesAll()
-    for _, plr in ipairs(Players:GetPlayers()) do
-        local char = plr.Character
-        if char then getOrCreateHitbox(char) end
-        plr.CharacterAdded:Connect(function(newChar) if hitboxAdded then task.defer(function() getOrCreateHitbox(newChar) end) end end)
-    end
+    for _, plr in ipairs(Players:GetPlayers()) do local c=plr.Character; if c then getOrCreateHitbox(c) end end
 end
 local function removeHitboxesAll()
-    for _, plr in ipairs(Players:GetPlayers()) do
-        local char = plr.Character
-        if char then
-            local hb = char:FindFirstChild("Hitbox")
-            if hb and hb:IsA("BasePart") then hb:Destroy() end
-        end
-    end
+    for _, plr in ipairs(Players:GetPlayers()) do local c=plr.Character; if c then local hb=c:FindFirstChild("Hitbox"); if hb and hb:IsA("BasePart") then hb:Destroy() end end end
 end
-
-addHBBtn.MouseButton1Click:Connect(function()
-    hitboxAdded = true
-    addHitboxesAll()
-    addHBBtn.Text = "Hitboxes Added"
-    addHBBtn.BackgroundColor3 = Color3.fromRGB(40,110,70)
-    task.delay(1.2, function() if addHBBtn then addHBBtn.Text="Add Hitboxes" end end)
-end)
-rmHBBtn.MouseButton1Click:Connect(function()
-    hitboxAdded = false
-    removeHitboxesAll()
-    rmHBBtn.Text = "Hitboxes Removed"
-    task.delay(1.2, function() if rmHBBtn then rmHBBtn.Text="Remove Hitboxes" end end)
-end)
+addHBBtn.MouseButton1Click:Connect(function() if unloaded then return end; hitboxAdded=true; addHitboxesAll(); addHBBtn.Text="Hitboxes Added"; addHBBtn.BackgroundColor3=Color3.fromRGB(40,110,70); task.delay(1.2,function() if addHBBtn then addHBBtn.Text="Add Hitboxes" end end) end)
+rmHBBtn.MouseButton1Click:Connect(function() if unloaded then return end; hitboxAdded=false; removeHitboxesAll(); rmHBBtn.Text="Hitboxes Removed"; task.delay(1.2,function() if rmHBBtn then rmHBBtn.Text="Remove Hitboxes" end end) end)
 
 -- ===== INIT / RESPAWN =====
-task.defer(function()
-    applyWalk(SPEED_DEFAULT)
-    applyJump(JUMP_DEFAULT)
+task.defer(setDefaults)
+player.CharacterAdded:Connect(function() task.defer(function()
+    _applyWalk(tonumber(walkVal.Text) or SPEED_DEFAULT)
+    _applyJump(tonumber(jumpVal.Text) or JUMP_DEFAULT)
+    if noclipEnabled then origCanCollide = {}; applyNoclipOnce() end
+    if hitboxAdded then addHitboxesAll() end
+end) end)
+
+-- ===== Minimize / Close (with confirm) =====
+minBtn.MouseButton1Click:Connect(function()
+    if unloaded then return end
+    minimized = not minimized
+    if minimized then content.Visible=false; panel.Size=UDim2.fromOffset(PANEL_W, TITLE_H + 8)
+    else panel.Size=UDim2.fromOffset(PANEL_W, PANEL_H); content.Visible=true end
 end)
 
-player.CharacterAdded:Connect(function()
-    task.defer(function()
-        applyWalk(tonumber(walkVal.Text) or SPEED_DEFAULT)
-        applyJump(tonumber(jumpVal.Text) or JUMP_DEFAULT)
-        if noclipEnabled then
-            origCanCollide = {}
-            applyNoclipOnce()
-        end
-        if hitboxAdded then addHitboxesAll() end
-    end)
+local function fullUnload()
+    if unloaded then return end
+    unloaded = true
+    -- turn off features & restore defaults
+    if noclipEnabled then stopNoclip() end
+    setDefaults()
+    espDisable()
+    removeHitboxesAll()
+    removeBTools()
+    -- destroy UI
+    gui:Destroy()
+end
+
+closeBtn.MouseButton1Click:Connect(function()
+    if unloaded then return end
+    modal.Visible = true
 end)
+noBtn.MouseButton1Click:Connect(function() modal.Visible = false end)
+yesBtn.MouseButton1Click:Connect(function() fullUnload() end)
