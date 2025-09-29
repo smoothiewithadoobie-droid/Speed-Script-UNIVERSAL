@@ -1,30 +1,36 @@
 --!strict
--- Utility GUI: Speed(8-500) + Speed Input + Teleport + Noclip + BTools + VC Reconnect + Rebinds + Minimize/Close
--- LocalScript in StarterPlayer > StarterPlayerScripts
+-- Utility GUI (v2): Bigger + Minimize/Close fixed + Speed(8-500) + JumpPower + Resets
+-- Teleport + Noclip (rebindable) + BTools + VC Reconnect + Dev Portal
+-- LocalScript → StarterPlayer → StarterPlayerScripts
 
 local Players = game:GetService("Players")
 local UIS = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
 local VoiceChatService = game:GetService("VoiceChatService")
+local GuiService = game:GetService("GuiService")
 
 local player = Players.LocalPlayer
 local mouse = player:GetMouse()
 
--- ========= CONFIG =========
+-- ====== CONFIG ======
 local SPEED_MIN, SPEED_MAX, SPEED_DEFAULT = 8, 500, 16
+local JUMP_MIN,  JUMP_MAX  = 0, 200
+-- Roblox defaults: most rigs use JumpPower 50 (when UseJumpPower = true)
+local JUMP_DEFAULT = 50
+
 local keybinds = {
     Teleport = Enum.KeyCode.F,
-    Noclip  = Enum.KeyCode.X,
+    Noclip   = Enum.KeyCode.X,
 }
 
--- ========= STATE =========
+-- ====== STATE ======
 local listeningFor: string? = nil
 local noclipEnabled = false
 local keepApplyConn: RBXScriptConnection? = nil
 local origCanCollide: {[Instance]: boolean} = {}
 local minimized = false
 
--- ========= HELPERS =========
+-- ====== HELPERS ======
 local function clamp(n:number, a:number, b:number)
     if n < a then return a elseif n > b then return b else return n end
 end
@@ -32,16 +38,16 @@ end
 local function getCharacter()
     return player.Character or player.CharacterAdded:Wait()
 end
-local function getHumanoid()
+local function getHumanoid(): Humanoid
     local c = getCharacter()
-    return c:FindFirstChildOfClass("Humanoid") or c:WaitForChild("Humanoid")
+    return (c:FindFirstChildOfClass("Humanoid") or c:WaitForChild("Humanoid")) :: Humanoid
 end
-local function getHRP()
+local function getHRP(): BasePart
     local c = getCharacter()
-    return c:FindFirstChild("HumanoidRootPart") or c:WaitForChild("HumanoidRootPart")
+    return (c:FindFirstChild("HumanoidRootPart") or c:WaitForChild("HumanoidRootPart")) :: BasePart
 end
 
--- ========= UI ROOT =========
+-- ====== UI ROOT ======
 local gui = Instance.new("ScreenGui")
 gui.Name = "UtilityUI"
 gui.IgnoreGuiInset = true
@@ -49,26 +55,85 @@ gui.ResetOnSpawn = false
 gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 gui.Parent = player:WaitForChild("PlayerGui")
 
+-- Panel (bigger)
+local PANEL_W, PANEL_H = 460, 340
+local TITLE_H = 44
+
 local panel = Instance.new("Frame")
 panel.Name = "Panel"
-panel.Size = UDim2.fromOffset(360, 255)
+panel.Size = UDim2.fromOffset(PANEL_W, PANEL_H)
 panel.Position = UDim2.fromOffset(40, 120)
 panel.BackgroundColor3 = Color3.fromRGB(24,24,24)
-panel.BackgroundTransparency = 0.1
+panel.BackgroundTransparency = 0.08
 panel.BorderSizePixel = 0
 panel.Parent = gui
-Instance.new("UICorner", panel).CornerRadius = UDim.new(0,12)
-local pStroke = Instance.new("UIStroke", panel) pStroke.Thickness = 1.5 pStroke.Transparency = 0.3
+Instance.new("UICorner", panel).CornerRadius = UDim.new(0,14)
+local pStroke = Instance.new("UIStroke", panel) pStroke.Thickness = 1.5 pStroke.Transparency = 0.25
 
-local originalSize = panel.Size
+-- Top bar (title area)
+local topbar = Instance.new("Frame")
+topbar.Name = "Topbar"
+topbar.Size = UDim2.fromOffset(PANEL_W, TITLE_H)
+topbar.BackgroundTransparency = 1
+topbar.Parent = panel
 
--- Drag panel
+local title = Instance.new("TextLabel")
+title.BackgroundTransparency = 1
+title.Text = "Utility"
+title.Font = Enum.Font.GothamBold
+title.TextSize = 20
+title.TextColor3 = Color3.new(1,1,1)
+title.TextXAlignment = Enum.TextXAlignment.Left
+title.Position = UDim2.fromOffset(14, 10)
+title.Size = UDim2.fromOffset(200, 24)
+title.Parent = topbar
+
+-- Close / Minimize (always on top)
+local closeBtn = Instance.new("TextButton")
+closeBtn.Text = "X"
+closeBtn.Font = Enum.Font.GothamBold
+closeBtn.TextSize = 14
+closeBtn.TextColor3 = Color3.fromRGB(255,255,255)
+closeBtn.Size = UDim2.fromOffset(28, 24)
+closeBtn.Position = UDim2.new(1, -34, 0, 10)
+closeBtn.BackgroundColor3 = Color3.fromRGB(180, 50, 50)
+closeBtn.BorderSizePixel = 0
+closeBtn.AutoButtonColor = true
+closeBtn.Parent = topbar
+Instance.new("UICorner", closeBtn).CornerRadius = UDim.new(0,6)
+closeBtn.ZIndex = 10
+
+local minBtn = Instance.new("TextButton")
+minBtn.Text = "-"
+minBtn.Font = Enum.Font.GothamBold
+minBtn.TextSize = 18
+minBtn.TextColor3 = Color3.fromRGB(255,255,255)
+minBtn.Size = UDim2.fromOffset(28, 24)
+minBtn.Position = UDim2.new(1, -68, 0, 10)
+minBtn.BackgroundColor3 = Color3.fromRGB(80, 80, 80)
+minBtn.BorderSizePixel = 0
+minBtn.AutoButtonColor = true
+minBtn.Parent = topbar
+Instance.new("UICorner", minBtn).CornerRadius = UDim.new(0,6)
+minBtn.ZIndex = 10
+
+-- Content container (everything below title goes in here)
+local content = Instance.new("Frame")
+content.Name = "Content"
+content.Position = UDim2.fromOffset(0, TITLE_H)
+content.Size = UDim2.fromOffset(PANEL_W, PANEL_H - TITLE_H)
+content.BackgroundTransparency = 1
+content.Parent = panel
+
+-- Make panel draggable using topbar only
 do
     local dragging=false; local dragStart; local startPos
-    panel.InputBegan:Connect(function(inp)
+    topbar.InputBegan:Connect(function(inp)
         if inp.UserInputType==Enum.UserInputType.MouseButton1 then
             dragging=true; dragStart=inp.Position; startPos=panel.Position
-            inp.Changed:Connect(function() if inp.UserInputState==Enum.UserInputState.End then dragging=false end end)
+            inp.Changed:Connect(function()
+                if inp.UserInputState==Enum.UserInputState.End then dragging=false end
+            end)
         end
     end)
     UIS.InputChanged:Connect(function(inp)
@@ -79,68 +144,39 @@ do
     end)
 end
 
--- === Title ===
-local title = Instance.new("TextLabel")
-title.BackgroundTransparency = 1
-title.Text = "Utility"
-title.Font = Enum.Font.GothamBold
-title.TextSize = 18
-title.TextColor3 = Color3.new(1,1,1)
-title.TextXAlignment = Enum.TextXAlignment.Left
-title.Position = UDim2.fromOffset(14,10)
-title.Size = UDim2.fromOffset(160,24)
-title.Parent = panel
-
--- === Close (X) button ===
-local closeBtn = Instance.new("TextButton")
-closeBtn.Text = "X"
-closeBtn.Font = Enum.Font.GothamBold
-closeBtn.TextSize = 14
-closeBtn.TextColor3 = Color3.fromRGB(255,255,255)
-closeBtn.Size = UDim2.fromOffset(28, 24)
-closeBtn.Position = UDim2.new(1, -34, 0, 6)
-closeBtn.BackgroundColor3 = Color3.fromRGB(180, 50, 50)
-closeBtn.BorderSizePixel = 0
-closeBtn.Parent = panel
-Instance.new("UICorner", closeBtn).CornerRadius = UDim.new(0,6)
-
--- === Minimize button ===
-local minBtn = Instance.new("TextButton")
-minBtn.Text = "-"
-minBtn.Font = Enum.Font.GothamBold
-minBtn.TextSize = 16
-minBtn.TextColor3 = Color3.fromRGB(255,255,255)
-minBtn.Size = UDim2.fromOffset(28, 24)
-minBtn.Position = UDim2.new(1, -68, 0, 6)
-minBtn.BackgroundColor3 = Color3.fromRGB(80, 80, 80)
-minBtn.BorderSizePixel = 0
-minBtn.Parent = panel
-Instance.new("UICorner", minBtn).CornerRadius = UDim.new(0,6)
-
--- === Close / Minimize logic ===
+-- Minimize/Close logic (now we hide 'content' only)
 closeBtn.MouseButton1Click:Connect(function()
     gui:Destroy()
 end)
 minBtn.MouseButton1Click:Connect(function()
     minimized = not minimized
     if minimized then
-        panel.Size = UDim2.fromOffset(originalSize.X.Offset, 40)
-        for _, child in ipairs(panel:GetChildren()) do
-            if child ~= title and child ~= minBtn and child ~= closeBtn and not child:IsA("UICorner") and not child:IsA("UIStroke") then
-                child.Visible = false
-            end
-        end
+        content.Visible = false
+        panel.Size = UDim2.fromOffset(PANEL_W, TITLE_H + 8)
     else
-        panel.Size = originalSize
-        for _, child in ipairs(panel:GetChildren()) do
-            if child ~= title and child ~= minBtn and child ~= closeBtn then
-                child.Visible = true
-            end
-        end
+        panel.Size = UDim2.fromOffset(PANEL_W, PANEL_H)
+        content.Visible = true
     end
 end)
 
--- ========= WALK SPEED (slider + input) =========
+-- ====== CONTROLS ======
+
+-- Row 0: Noclip pill (moved under the title, right side)
+local noclipBtn = Instance.new("TextButton")
+noclipBtn.Name = "NoclipBtn"
+noclipBtn.AnchorPoint = Vector2.new(1,0)
+noclipBtn.Position = UDim2.new(1, -14, 0, 8)
+noclipBtn.Size = UDim2.fromOffset(120, 28)
+noclipBtn.BackgroundColor3 = Color3.fromRGB(80,30,30)
+noclipBtn.Text = "Noclip: OFF"
+noclipBtn.TextColor3 = Color3.new(1,1,1)
+noclipBtn.Font = Enum.Font.GothamBold
+noclipBtn.TextSize = 14
+noclipBtn.BorderSizePixel = 0
+noclipBtn.Parent = content
+Instance.new("UICorner", noclipBtn).CornerRadius = UDim.new(1, 0)
+
+-- Row 1: Walk speed label + value
 local walkLabel = Instance.new("TextLabel")
 walkLabel.BackgroundTransparency = 1
 walkLabel.Font = Enum.Font.Gotham
@@ -148,9 +184,9 @@ walkLabel.TextSize = 14
 walkLabel.TextColor3 = Color3.fromRGB(210,210,210)
 walkLabel.TextXAlignment = Enum.TextXAlignment.Left
 walkLabel.Text = "Walk Speed"
-walkLabel.Position = UDim2.fromOffset(14, 42)
-walkLabel.Size = UDim2.fromOffset(100, 18)
-walkLabel.Parent = panel
+walkLabel.Position = UDim2.fromOffset(14, 44)
+walkLabel.Size = UDim2.fromOffset(120, 18)
+walkLabel.Parent = content
 
 local walkNumLabel = Instance.new("TextLabel")
 walkNumLabel.BackgroundTransparency = 1
@@ -159,16 +195,17 @@ walkNumLabel.TextSize = 14
 walkNumLabel.TextColor3 = Color3.fromRGB(210,210,210)
 walkNumLabel.TextXAlignment = Enum.TextXAlignment.Right
 walkNumLabel.Text = tostring(SPEED_DEFAULT)
-walkNumLabel.Position = UDim2.new(1, -70, 0, 42)
+walkNumLabel.Position = UDim2.new(1, -70, 0, 44)
 walkNumLabel.Size = UDim2.fromOffset(56, 18)
-walkNumLabel.Parent = panel
+walkNumLabel.Parent = content
 
+-- Walk slider
 local walkBar = Instance.new("Frame")
-walkBar.Size = UDim2.fromOffset(300, 10)
-walkBar.Position = UDim2.fromOffset(20, 64)
+walkBar.Size = UDim2.fromOffset(PANEL_W - 40, 10)
+walkBar.Position = UDim2.fromOffset(20, 66)
 walkBar.BackgroundColor3 = Color3.fromRGB(50,50,50)
 walkBar.BorderSizePixel = 0
-walkBar.Parent = panel
+walkBar.Parent = content
 Instance.new("UICorner", walkBar).CornerRadius = UDim.new(0,5)
 
 local walkFill = Instance.new("Frame")
@@ -190,7 +227,7 @@ walkKnob.Parent = walkBar
 Instance.new("UICorner", walkKnob).CornerRadius = UDim.new(1,0)
 local wKStroke = Instance.new("UIStroke", walkKnob) wKStroke.Thickness = 1 wKStroke.Transparency = 0.2
 
--- Direct speed input
+-- Type-in speed
 local speedInput = Instance.new("TextBox")
 speedInput.PlaceholderText = "Type speed (8–500)"
 speedInput.Text = ""
@@ -200,24 +237,124 @@ speedInput.TextSize = 14
 speedInput.TextColor3 = Color3.fromRGB(255,255,255)
 speedInput.BackgroundColor3 = Color3.fromRGB(36,36,36)
 speedInput.BorderSizePixel = 0
-speedInput.Size = UDim2.fromOffset(300, 26)
-speedInput.Position = UDim2.fromOffset(20, 84)
-speedInput.Parent = panel
+speedInput.Size = UDim2.fromOffset(PANEL_W - 40, 26)
+speedInput.Position = UDim2.fromOffset(20, 88)
+speedInput.Parent = content
 Instance.new("UICorner", speedInput).CornerRadius = UDim.new(0,8)
 
--- ========= NOCLIP TOGGLE + KEYBINDS =========
-local noclipBtn = Instance.new("TextButton")
-noclipBtn.Font = Enum.Font.GothamBold
-noclipBtn.TextSize = 14
-noclipBtn.TextColor3 = Color3.new(1,1,1)
-noclipBtn.Text = "Noclip: OFF"
-noclipBtn.Size = UDim2.fromOffset(100, 28)
-noclipBtn.Position = UDim2.fromOffset(240, 10)
-noclipBtn.BackgroundColor3 = Color3.fromRGB(80,30,30)
-noclipBtn.BorderSizePixel = 0
-noclipBtn.Parent = panel
-Instance.new("UICorner", noclipBtn).CornerRadius = UDim.new(0,8)
+-- Row 2: Jump Power
+local jumpLabel = Instance.new("TextLabel")
+jumpLabel.BackgroundTransparency = 1
+jumpLabel.Font = Enum.Font.Gotham
+jumpLabel.TextSize = 14
+jumpLabel.TextColor3 = Color3.fromRGB(210,210,210)
+jumpLabel.TextXAlignment = Enum.TextXAlignment.Left
+jumpLabel.Text = "Jump Power"
+jumpLabel.Position = UDim2.fromOffset(14, 124)
+jumpLabel.Size = UDim2.fromOffset(120, 18)
+jumpLabel.Parent = content
 
+local jumpNum = Instance.new("TextLabel")
+jumpNum.BackgroundTransparency = 1
+jumpNum.Font = Enum.Font.Gotham
+jumpNum.TextSize = 14
+jumpNum.TextColor3 = Color3.fromRGB(210,210,210)
+jumpNum.TextXAlignment = Enum.TextXAlignment.Right
+jumpNum.Text = tostring(JUMP_DEFAULT)
+jumpNum.Position = UDim2.new(1, -70, 0, 124)
+jumpNum.Size = UDim2.fromOffset(56, 18)
+jumpNum.Parent = content
+
+local jumpBar = Instance.new("Frame")
+jumpBar.Size = UDim2.fromOffset(PANEL_W - 40, 10)
+jumpBar.Position = UDim2.fromOffset(20, 146)
+jumpBar.BackgroundColor3 = Color3.fromRGB(50,50,50)
+jumpBar.BorderSizePixel = 0
+jumpBar.Parent = content
+Instance.new("UICorner", jumpBar).CornerRadius = UDim.new(0,5)
+
+local jumpFill = Instance.new("Frame")
+jumpFill.AnchorPoint = Vector2.new(0,0.5)
+jumpFill.Position = UDim2.fromScale(0,0.5)
+jumpFill.Size = UDim2.fromScale(0,1)
+jumpFill.BackgroundColor3 = Color3.fromRGB(255,170,90)
+jumpFill.BorderSizePixel = 0
+jumpFill.Parent = jumpBar
+Instance.new("UICorner", jumpFill).CornerRadius = UDim.new(0,5)
+
+local jumpKnob = Instance.new("ImageButton")
+jumpKnob.AnchorPoint = Vector2.new(0.5,0.5)
+jumpKnob.Size = UDim2.fromOffset(16,16)
+jumpKnob.Position = UDim2.fromScale(0,0.5)
+jumpKnob.BackgroundColor3 = Color3.fromRGB(230,230,230)
+jumpKnob.BorderSizePixel = 0
+jumpKnob.Parent = jumpBar
+Instance.new("UICorner", jumpKnob).CornerRadius = UDim.new(1,0)
+local jKStroke = Instance.new("UIStroke", jumpKnob) jKStroke.Thickness = 1 jKStroke.Transparency = 0.2
+
+-- Row 3: Buttons (VC, BTools, Dev Portal)
+local vcButton = Instance.new("TextButton")
+vcButton.Font = Enum.Font.GothamBold
+vcButton.TextSize = 14
+vcButton.TextColor3 = Color3.new(1,1,1)
+vcButton.Text = "VC Reconnect"
+vcButton.Size = UDim2.fromOffset(140, 30)
+vcButton.Position = UDim2.fromOffset(20, 178)
+vcButton.BackgroundColor3 = Color3.fromRGB(35,125,255)
+vcButton.BorderSizePixel = 0
+vcButton.Parent = content
+Instance.new("UICorner", vcButton).CornerRadius = UDim.new(0,8)
+
+local btoolsButton = Instance.new("TextButton")
+btoolsButton.Font = Enum.Font.GothamBold
+btoolsButton.TextSize = 14
+btoolsButton.TextColor3 = Color3.new(1,1,1)
+btoolsButton.Text = "Give BTools"
+btoolsButton.Size = UDim2.fromOffset(140, 30)
+btoolsButton.Position = UDim2.fromOffset(170, 178)
+btoolsButton.BackgroundColor3 = Color3.fromRGB(120, 170, 60)
+btoolsButton.BorderSizePixel = 0
+btoolsButton.Parent = content
+Instance.new("UICorner", btoolsButton).CornerRadius = UDim.new(0,8)
+
+local devPortalBtn = Instance.new("TextButton")
+devPortalBtn.Font = Enum.Font.GothamBold
+devPortalBtn.TextSize = 14
+devPortalBtn.TextColor3 = Color3.new(1,1,1)
+devPortalBtn.Text = "Dev Portal"
+devPortalBtn.Size = UDim2.fromOffset(140, 30)
+devPortalBtn.Position = UDim2.fromOffset(320, 178)
+devPortalBtn.BackgroundColor3 = Color3.fromRGB(90, 90, 160)
+devPortalBtn.BorderSizePixel = 0
+devPortalBtn.Parent = content
+Instance.new("UICorner", devPortalBtn).CornerRadius = UDim.new(0,8)
+
+-- Row 4: Resets
+local resetSpeedBtn = Instance.new("TextButton")
+resetSpeedBtn.Font = Enum.Font.GothamBold
+resetSpeedBtn.TextSize = 14
+resetSpeedBtn.TextColor3 = Color3.new(1,1,1)
+resetSpeedBtn.Text = "Reset Speed"
+resetSpeedBtn.Size = UDim2.fromOffset(140, 30)
+resetSpeedBtn.Position = UDim2.fromOffset(20, 214)
+resetSpeedBtn.BackgroundColor3 = Color3.fromRGB(120, 70, 70)
+resetSpeedBtn.BorderSizePixel = 0
+resetSpeedBtn.Parent = content
+Instance.new("UICorner", resetSpeedBtn).CornerRadius = UDim.new(0,8)
+
+local resetJumpBtn = Instance.new("TextButton")
+resetJumpBtn.Font = Enum.Font.GothamBold
+resetJumpBtn.TextSize = 14
+resetJumpBtn.TextColor3 = Color3.new(1,1,1)
+resetJumpBtn.Text = "Reset Jump"
+resetJumpBtn.Size = UDim2.fromOffset(140, 30)
+resetJumpBtn.Position = UDim2.fromOffset(170, 214)
+resetJumpBtn.BackgroundColor3 = Color3.fromRGB(120, 70, 70)
+resetJumpBtn.BorderSizePixel = 0
+resetJumpBtn.Parent = content
+Instance.new("UICorner", resetJumpBtn).CornerRadius = UDim.new(0,8)
+
+-- Row 5: Keybinds
 local kbTitle = Instance.new("TextLabel")
 kbTitle.BackgroundTransparency = 1
 kbTitle.Font = Enum.Font.GothamBold
@@ -225,9 +362,9 @@ kbTitle.TextSize = 14
 kbTitle.TextColor3 = Color3.fromRGB(255,255,255)
 kbTitle.TextXAlignment = Enum.TextXAlignment.Left
 kbTitle.Text = "Keybinds"
-kbTitle.Position = UDim2.fromOffset(14, 170)
+kbTitle.Position = UDim2.fromOffset(14, 254)
 kbTitle.Size = UDim2.fromOffset(100, 18)
-kbTitle.Parent = panel
+kbTitle.Parent = content
 
 local function newBindRow(labelText:string, x:number, y:number)
     local lbl = Instance.new("TextLabel")
@@ -239,7 +376,7 @@ local function newBindRow(labelText:string, x:number, y:number)
     lbl.TextXAlignment = Enum.TextXAlignment.Left
     lbl.Position = UDim2.fromOffset(x, y)
     lbl.Size = UDim2.fromOffset(80, 24)
-    lbl.Parent = panel
+    lbl.Parent = content
 
     local btn = Instance.new("TextButton")
     btn.Font = Enum.Font.GothamBold
@@ -250,44 +387,20 @@ local function newBindRow(labelText:string, x:number, y:number)
     btn.Position = UDim2.fromOffset(x+86, y)
     btn.BackgroundColor3 = Color3.fromRGB(36,36,36)
     btn.BorderSizePixel = 0
-    btn.Parent = panel
+    btn.Parent = content
     Instance.new("UICorner", btn).CornerRadius = UDim.new(0,8)
     local stroke = Instance.new("UIStroke", btn) stroke.Thickness = 1 stroke.Transparency = 0.4
     return btn
 end
 
-local tpBindBtn = newBindRow("Teleport", 14, 192)
-local ncBindBtn = newBindRow("Noclip",   170, 192)
+local tpBindBtn = newBindRow("Teleport", 14, 276)
+local ncBindBtn = newBindRow("Noclip",   170, 276)
 
--- ========= VC RECONNECT & BTOOLS =========
-local vcButton = Instance.new("TextButton")
-vcButton.Font = Enum.Font.GothamBold
-vcButton.TextSize = 14
-vcButton.TextColor3 = Color3.new(1,1,1)
-vcButton.Text = "VC Reconnect"
-vcButton.Size = UDim2.fromOffset(140, 28)
-vcButton.Position = UDim2.fromOffset(20, 132)
-vcButton.BackgroundColor3 = Color3.fromRGB(35,125,255)
-vcButton.BorderSizePixel = 0
-vcButton.Parent = panel
-Instance.new("UICorner", vcButton).CornerRadius = UDim.new(0,8)
-
-local btoolsButton = Instance.new("TextButton")
-btoolsButton.Font = Enum.Font.GothamBold
-btoolsButton.TextSize = 14
-btoolsButton.TextColor3 = Color3.new(1,1,1)
-btoolsButton.Text = "Give BTools"
-btoolsButton.Size = UDim2.fromOffset(140, 28)
-btoolsButton.Position = UDim2.fromOffset(180, 132)
-btoolsButton.BackgroundColor3 = Color3.fromRGB(120, 170, 60)
-btoolsButton.BorderSizePixel = 0
-btoolsButton.Parent = panel
-Instance.new("UICorner", btoolsButton).CornerRadius = UDim.new(0,8)
-
--- ========= SLIDER WIRING (Walk Speed) =========
+-- ====== SLIDER WIRING ======
 local function alphaFromClick(frame:Frame, xPixel:number)
     return clamp((xPixel - frame.AbsolutePosition.X) / frame.AbsoluteSize.X, 0, 1)
 end
+
 local function connectSlider(bar:Frame, fill:Frame, knob:ImageButton, minV:number, maxV:number, defaultV:number, onSet:(number)->())
     local function toAlpha(v:number) return (v - minV) / (maxV - minV) end
     local function fromAlpha(a:number) return math.floor(minV + a*(maxV-minV) + 0.5) end
@@ -311,31 +424,40 @@ local function connectSlider(bar:Frame, fill:Frame, knob:ImageButton, minV:numbe
             setAlpha(alphaFromClick(bar, inp.Position.X))
         end
     end)
-    return function(v:number) -- external setter to sync UI
-        local a = toAlpha(v)
-        setAlpha(a)
+    return function(v:number)
+        setAlpha(toAlpha(v))
     end
 end
 
-local syncWalkUI = connectSlider(walkBar, walkFill, walkKnob, SPEED_MIN, SPEED_MAX, SPEED_DEFAULT, function(val)
-    walkNumLabel.Text = tostring(val)
+-- Walk speed slider
+local function applyWalkSpeed(v:number)
+    walkNumLabel.Text = tostring(v)
     local hum = getHumanoid()
-    if hum then hum.WalkSpeed = val end
-end)
+    hum.WalkSpeed = v
+end
+local syncWalkUI = connectSlider(walkBar, walkFill, walkKnob, SPEED_MIN, SPEED_MAX, SPEED_DEFAULT, applyWalkSpeed)
 
--- Apply typed speed
+-- Jump power slider
+local function applyJump(v:number)
+    jumpNum.Text = tostring(v)
+    local hum = getHumanoid()
+    hum.UseJumpPower = true
+    hum.JumpPower = v
+end
+local syncJumpUI = connectSlider(jumpBar, jumpFill, jumpKnob, JUMP_MIN, JUMP_MAX, JUMP_DEFAULT, applyJump)
+
+-- Type-in speed
 speedInput.FocusLost:Connect(function()
     local n = tonumber(speedInput.Text)
     if n then
         n = clamp(math.floor(n + 0.5), SPEED_MIN, SPEED_MAX)
         syncWalkUI(n)
-        local hum = getHumanoid()
-        if hum then hum.WalkSpeed = n end
+        applyWalkSpeed(n)
     end
     speedInput.Text = ""
 end)
 
--- ========= TELEPORT =========
+-- ====== TELEPORT ======
 local function teleportToMouse()
     local hrp = getHRP()
     local hit = mouse.Hit
@@ -345,7 +467,7 @@ local function teleportToMouse()
     end
 end
 
--- ========= NOCLIP =========
+-- ====== NOCLIP ======
 local function applyNoclipOnce()
     local char = getCharacter()
     for _, d in ipairs(char:GetDescendants()) do
@@ -394,7 +516,7 @@ end
 
 noclipBtn.MouseButton1Click:Connect(toggleNoclip)
 
--- ========= KEYBINDS =========
+-- ====== KEYBINDS ======
 local function keycodeToText(kc: Enum.KeyCode): string
     return kc.Name
 end
@@ -443,7 +565,7 @@ UIS.InputBegan:Connect(function(inp, gp)
     end
 end)
 
--- ========= VC RECONNECT (cannot bypass bans) =========
+-- ====== VC RECONNECT (cannot bypass bans) ======
 local function vcReconnect()
     vcButton.Text = "VC: Checking..."
     task.spawn(function()
@@ -469,7 +591,7 @@ local function vcReconnect()
 end
 vcButton.MouseButton1Click:Connect(vcReconnect)
 
--- ========= BTOOLS (Delete / Clone / Move) =========
+-- ====== BTOOLS ======
 local btoolsGiven = false
 local function mkTool(name:string)
     local t = Instance.new("Tool")
@@ -482,10 +604,9 @@ end
 local function giveBTools()
     if btoolsGiven then return end
     btoolsGiven = true
-
     local backpack = player:WaitForChild("Backpack")
 
-    -- DELETE tool
+    -- DELETE
     local delTool = mkTool("BT_Delete")
     delTool.Activated:Connect(function()
         local target = mouse.Target
@@ -495,7 +616,7 @@ local function giveBTools()
     end)
     delTool.Parent = backpack
 
-    -- CLONE tool
+    -- CLONE
     local cloneTool = mkTool("BT_Clone")
     cloneTool.Activated:Connect(function()
         local target = mouse.Target
@@ -507,17 +628,15 @@ local function giveBTools()
     end)
     cloneTool.Parent = backpack
 
-    -- MOVE tool (drag toward mouse)
+    -- MOVE
     local moveTool = mkTool("BT_Move")
     local movingConn: RBXScriptConnection? = nil
     local picked: BasePart? = nil
-
     moveTool.Activated:Connect(function()
         picked = mouse.Target
         if picked and picked:IsA("BasePart") and not picked:IsDescendantOf(player.Character) then
             picked.Anchored = false
-            local hrp = getHRP()
-            if picked.SetNetworkOwner and hrp then pcall(function() picked:SetNetworkOwner(player) end) end
+            pcall(function() picked:SetNetworkOwner(player) end)
             movingConn = RunService.RenderStepped:Connect(function()
                 if not picked then return end
                 local cf = mouse.Hit
@@ -533,18 +652,41 @@ local function giveBTools()
 end
 btoolsButton.MouseButton1Click:Connect(giveBTools)
 
--- ========= INIT / RESPAWN =========
+-- ====== DEV PORTAL ======
+local DEV_URL = "https://create.roblox.com/dashboard/creations"
+devPortalBtn.MouseButton1Click:Connect(function()
+    local ok = pcall(function()
+        GuiService:OpenBrowserWindow(DEV_URL)
+    end)
+    if not ok then
+        -- Fallback: just change text briefly so the user sees it
+        devPortalBtn.Text = "Open: create.roblox.com"
+        task.delay(2, function() devPortalBtn.Text = "Dev Portal" end)
+        print("Open this URL:", DEV_URL)
+    end
+end)
+
+-- ====== RESET BUTTONS ======
+resetSpeedBtn.MouseButton1Click:Connect(function()
+    syncWalkUI(SPEED_DEFAULT)
+    applyWalkSpeed(SPEED_DEFAULT)
+end)
+resetJumpBtn.MouseButton1Click:Connect(function()
+    syncJumpUI(JUMP_DEFAULT)
+    applyJump(JUMP_DEFAULT)
+end)
+
+-- ====== INIT / RESPAWN ======
 task.defer(function()
-    local hum = getHumanoid()
-    if hum then hum.WalkSpeed = SPEED_DEFAULT end
+    -- Apply defaults
+    applyWalkSpeed(SPEED_DEFAULT)
+    applyJump(JUMP_DEFAULT)
 end)
 
 player.CharacterAdded:Connect(function()
     task.defer(function()
-        local hum = getHumanoid()
-        if hum then
-            hum.WalkSpeed = tonumber(walkNumLabel.Text) or SPEED_DEFAULT
-        end
+        applyWalkSpeed(tonumber(walkNumLabel.Text) or SPEED_DEFAULT)
+        applyJump(tonumber(jumpNum.Text) or JUMP_DEFAULT)
         if noclipEnabled then applyNoclipOnce() end
     end)
 end)
