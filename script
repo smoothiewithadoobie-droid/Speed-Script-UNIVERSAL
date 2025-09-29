@@ -1,242 +1,414 @@
--- Speed Slider GUI (drop-in, simple/robust)
+--!strict
+-- Utility GUI: Speed + Teleport + Noclip (rebindable) + VC Reconnect
 -- LocalScript in StarterPlayer > StarterPlayerScripts
 
 local Players = game:GetService("Players")
 local UIS = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+local ContextActionService = game:GetService("ContextActionService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
 local player = Players.LocalPlayer
+local mouse = player:GetMouse()
 
--- === CONFIG ===
-local MIN_SPEED = 8
-local MAX_SPEED = 100
-local DEFAULT_SPEED = 16
+-- ========= CONFIG =========
+local SPEED_MIN, SPEED_MAX, SPEED_DEFAULT = 8, 100, 16
+local keybinds = {
+    Teleport = Enum.KeyCode.F,
+    Noclip  = Enum.KeyCode.X,
+}
 
--- === UI ===
+-- ========= STATE =========
+local noclipEnabled = false
+local origCanCollide: {[Instance]: boolean} = {}
+local keepApplyConn: RBXScriptConnection? = nil
+local listeningFor: string? = nil
+
+-- ========= HELPERS =========
+local function getCharacter()
+    return player.Character or player.CharacterAdded:Wait()
+end
+local function getHumanoid()
+    local c = getCharacter()
+    return c:FindFirstChildOfClass("Humanoid") or c:WaitForChild("Humanoid")
+end
+local function getHRP()
+    local c = getCharacter()
+    return c:FindFirstChild("HumanoidRootPart") or c:WaitForChild("HumanoidRootPart")
+end
+local function clamp(n:number, a:number, b:number) if n<a then return a elseif n>b then return b else return n end end
+
+-- ========= UI =========
 local gui = Instance.new("ScreenGui")
-gui.Name = "SpeedUI"
+gui.Name = "UtilityUI"
 gui.IgnoreGuiInset = true
 gui.ResetOnSpawn = false
 gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 gui.Parent = player:WaitForChild("PlayerGui")
 
 local panel = Instance.new("Frame")
-panel.Size = UDim2.fromOffset(260, 110)
+panel.Name = "Panel"
+panel.Size = UDim2.fromOffset(340, 210)
 panel.Position = UDim2.fromOffset(40, 120)
 panel.BackgroundColor3 = Color3.fromRGB(24,24,24)
 panel.BackgroundTransparency = 0.1
 panel.BorderSizePixel = 0
 panel.Parent = gui
+Instance.new("UICorner", panel).CornerRadius = UDim.new(0,12)
+local pStroke = Instance.new("UIStroke", panel) pStroke.Thickness = 1.5 pStroke.Transparency = 0.3
 
-local corner = Instance.new("UICorner", panel)
-corner.CornerRadius = UDim.new(0,12)
-local stroke = Instance.new("UIStroke", panel)
-stroke.Thickness = 1.5
-stroke.Transparency = 0.3
+-- Drag panel
+do
+    local dragging=false; local dragStart; local startPos
+    panel.InputBegan:Connect(function(inp)
+        if inp.UserInputType==Enum.UserInputType.MouseButton1 then
+            dragging=true; dragStart=inp.Position; startPos=panel.Position
+            inp.Changed:Connect(function() if inp.UserInputState==Enum.UserInputState.End then dragging=false end end)
+        end
+    end)
+    UIS.InputChanged:Connect(function(inp)
+        if dragging and inp.UserInputType==Enum.UserInputType.MouseMovement and dragStart and startPos then
+            local d=inp.Position-dragStart; panel.Position=UDim2.fromOffset(startPos.X.Offset+d.X, startPos.Y.Offset+d.Y)
+        end
+    end)
+end
 
 local title = Instance.new("TextLabel")
 title.BackgroundTransparency = 1
-title.Text = "Player Speed"
+title.Text = "Utility"
 title.Font = Enum.Font.GothamBold
 title.TextSize = 18
 title.TextColor3 = Color3.new(1,1,1)
 title.TextXAlignment = Enum.TextXAlignment.Left
 title.Position = UDim2.fromOffset(14,10)
-title.Size = UDim2.fromOffset(200,24)
+title.Size = UDim2.fromOffset(160,24)
 title.Parent = panel
 
-local valueLabel = Instance.new("TextLabel")
-valueLabel.BackgroundTransparency = 1
-valueLabel.Text = tostring(DEFAULT_SPEED)
-valueLabel.Font = Enum.Font.Gotham
-valueLabel.TextSize = 16
-valueLabel.TextColor3 = Color3.fromRGB(210,210,210)
-valueLabel.TextXAlignment = Enum.TextXAlignment.Right
-valueLabel.Position = UDim2.new(1,-70,0,10)
-valueLabel.Size = UDim2.fromOffset(56,24)
-valueLabel.Parent = panel
+-- --- SPEED SLIDER (walk) ---
+local walkValueLabel = Instance.new("TextLabel")
+walkValueLabel.BackgroundTransparency = 1
+walkValueLabel.Font = Enum.Font.Gotham
+walkValueLabel.TextSize = 14
+walkValueLabel.TextColor3 = Color3.fromRGB(210,210,210)
+walkValueLabel.TextXAlignment = Enum.TextXAlignment.Left
+walkValueLabel.Text = "Walk Speed"
+walkValueLabel.Position = UDim2.fromOffset(14, 42)
+walkValueLabel.Size = UDim2.fromOffset(100, 18)
+walkValueLabel.Parent = panel
 
--- Slider container
-local bar = Instance.new("Frame")
-bar.Name = "Bar"
-bar.Size = UDim2.fromOffset(216, 10)
-bar.Position = UDim2.fromOffset(22, 56)
-bar.BackgroundColor3 = Color3.fromRGB(50,50,50)
-bar.BorderSizePixel = 0
-bar.Parent = panel
-local barCorner = Instance.new("UICorner", bar)
-barCorner.CornerRadius = UDim.new(0,5)
+local walkNumLabel = Instance.new("TextLabel")
+walkNumLabel.BackgroundTransparency = 1
+walkNumLabel.Font = Enum.Font.Gotham
+walkNumLabel.TextSize = 14
+walkNumLabel.TextColor3 = Color3.fromRGB(210,210,210)
+walkNumLabel.TextXAlignment = Enum.TextXAlignment.Right
+walkNumLabel.Text = tostring(SPEED_DEFAULT)
+walkNumLabel.Position = UDim2.new(1, -70, 0, 42)
+walkNumLabel.Size = UDim2.fromOffset(56, 18)
+walkNumLabel.Parent = panel
 
--- Fill inside bar
-local fill = Instance.new("Frame")
-fill.Name = "Fill"
-fill.AnchorPoint = Vector2.new(0, 0.5)
-fill.Position = UDim2.fromScale(0, 0.5)
-fill.Size = UDim2.fromScale(0, 1)
-fill.BackgroundColor3 = Color3.fromRGB(50,200,120)
-fill.BorderSizePixel = 0
-fill.Parent = bar
-local fillCorner = Instance.new("UICorner", fill)
-fillCorner.CornerRadius = UDim.new(0,5)
+local walkBar = Instance.new("Frame")
+walkBar.Size = UDim2.fromOffset(300, 10)
+walkBar.Position = UDim2.fromOffset(20, 64)
+walkBar.BackgroundColor3 = Color3.fromRGB(50,50,50)
+walkBar.BorderSizePixel = 0
+walkBar.Parent = panel
+Instance.new("UICorner", walkBar).CornerRadius = UDim.new(0,5)
 
--- Knob INSIDE the bar (uses scale, not absolute pixels)
-local knob = Instance.new("ImageButton")
-knob.Name = "Knob"
-knob.AnchorPoint = Vector2.new(0.5, 0.5)
-knob.Position = UDim2.fromScale(0, 0.5) -- set later
-knob.Size = UDim2.fromOffset(16,16)
-knob.BackgroundColor3 = Color3.fromRGB(230,230,230)
-knob.BorderSizePixel = 0
-knob.Parent = bar
-local knobCorner = Instance.new("UICorner", knob)
-knobCorner.CornerRadius = UDim.new(1,0)
-local knobStroke = Instance.new("UIStroke", knob)
-knobStroke.Thickness = 1
-knobStroke.Transparency = 0.2
+local walkFill = Instance.new("Frame")
+walkFill.AnchorPoint = Vector2.new(0,0.5)
+walkFill.Position = UDim2.fromScale(0,0.5)
+walkFill.Size = UDim2.fromScale(0,1)
+walkFill.BackgroundColor3 = Color3.fromRGB(50,200,120)
+walkFill.BorderSizePixel = 0
+walkFill.Parent = walkBar
+Instance.new("UICorner", walkFill).CornerRadius = UDim.new(0,5)
 
--- Reset
-local resetBtn = Instance.new("TextButton")
-resetBtn.Text = "Reset"
-resetBtn.Font = Enum.Font.GothamBold
-resetBtn.TextSize = 14
-resetBtn.TextColor3 = Color3.new(1,1,1)
-resetBtn.AutoButtonColor = true
-resetBtn.Size = UDim2.fromOffset(70, 28)
-resetBtn.Position = UDim2.fromOffset(22, 72)
-resetBtn.BackgroundColor3 = Color3.fromRGB(35,125,255)
-resetBtn.BorderSizePixel = 0
-resetBtn.Parent = panel
-local resetCorner = Instance.new("UICorner", resetBtn)
-resetCorner.CornerRadius = UDim.new(0,8)
+local walkKnob = Instance.new("ImageButton")
+walkKnob.AnchorPoint = Vector2.new(0.5,0.5)
+walkKnob.Size = UDim2.fromOffset(16,16)
+walkKnob.Position = UDim2.fromScale(0,0.5)
+walkKnob.BackgroundColor3 = Color3.fromRGB(230,230,230)
+walkKnob.BorderSizePixel = 0
+walkKnob.Parent = walkBar
+Instance.new("UICorner", walkKnob).CornerRadius = UDim.new(1,0)
+local wKStroke = Instance.new("UIStroke", walkKnob) wKStroke.Thickness = 1 wKStroke.Transparency = 0.2
 
--- Direct input
-local inputBox = Instance.new("TextBox")
-inputBox.PlaceholderText = "Type speed"
-inputBox.Text = ""
-inputBox.ClearTextOnFocus = false
-inputBox.Font = Enum.Font.Gotham
-inputBox.TextSize = 14
-inputBox.TextColor3 = Color3.new(1,1,1)
-inputBox.BackgroundColor3 = Color3.fromRGB(36,36,36)
-inputBox.BorderSizePixel = 0
-inputBox.Size = UDim2.fromOffset(110, 28)
-inputBox.Position = UDim2.fromOffset(134, 72)
-inputBox.Parent = panel
-local inputCorner = Instance.new("UICorner", inputBox)
-inputCorner.CornerRadius = UDim.new(0,8)
+-- --- NOCLIP TOGGLE & KEYBINDS ---
+local noclipBtn = Instance.new("TextButton")
+noclipBtn.Font = Enum.Font.GothamBold
+noclipBtn.TextSize = 14
+noclipBtn.TextColor3 = Color3.new(1,1,1)
+noclipBtn.Text = "Noclip: OFF"
+noclipBtn.Size = UDim2.fromOffset(100, 28)
+noclipBtn.Position = UDim2.fromOffset(220, 10)
+noclipBtn.BackgroundColor3 = Color3.fromRGB(80,30,30)
+noclipBtn.BorderSizePixel = 0
+noclipBtn.Parent = panel
+Instance.new("UICorner", noclipBtn).CornerRadius = UDim.new(0,8)
 
--- Drag panel
-do
-	local dragging = false
-	local dragStart, startPos
-	panel.InputBegan:Connect(function(inp)
-		if inp.UserInputType == Enum.UserInputType.MouseButton1 then
-			dragging = true
-			dragStart = inp.Position
-			startPos = panel.Position
-			inp.Changed:Connect(function()
-				if inp.UserInputState == Enum.UserInputState.End then
-					dragging = false
-				end
-			end)
-		end
-	end)
-	UIS.InputChanged:Connect(function(inp)
-		if dragging and inp.UserInputType == Enum.UserInputType.MouseMovement and dragStart and startPos then
-			local delta = inp.Position - dragStart
-			panel.Position = UDim2.fromOffset(startPos.X.Offset + delta.X, startPos.Y.Offset + delta.Y)
-		end
-	end)
+local kbTitle = Instance.new("TextLabel")
+kbTitle.BackgroundTransparency = 1
+kbTitle.Font = Enum.Font.GothamBold
+kbTitle.TextSize = 14
+kbTitle.TextColor3 = Color3.fromRGB(255,255,255)
+kbTitle.TextXAlignment = Enum.TextXAlignment.Left
+kbTitle.Text = "Keybinds"
+kbTitle.Position = UDim2.fromOffset(14, 138)
+kbTitle.Size = UDim2.fromOffset(100, 18)
+kbTitle.Parent = panel
+
+local function newBindRow(labelText:string, x:number, y:number)
+    local lbl = Instance.new("TextLabel")
+    lbl.BackgroundTransparency = 1
+    lbl.Font = Enum.Font.Gotham
+    lbl.TextSize = 14
+    lbl.TextColor3 = Color3.fromRGB(210,210,210)
+    lbl.Text = labelText
+    lbl.TextXAlignment = Enum.TextXAlignment.Left
+    lbl.Position = UDim2.fromOffset(x, y)
+    lbl.Size = UDim2.fromOffset(80, 24)
+    lbl.Parent = panel
+
+    local btn = Instance.new("TextButton")
+    btn.Font = Enum.Font.GothamBold
+    btn.TextSize = 14
+    btn.TextColor3 = Color3.new(1,1,1)
+    btn.Text = "..."
+    btn.Size = UDim2.fromOffset(80, 24)
+    btn.Position = UDim2.fromOffset(x+86, y)
+    btn.BackgroundColor3 = Color3.fromRGB(36,36,36)
+    btn.BorderSizePixel = 0
+    btn.Parent = panel
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(0,8)
+    local stroke = Instance.new("UIStroke", btn) stroke.Thickness = 1 stroke.Transparency = 0.4
+    return btn
 end
 
--- === SPEED/SLIDER LOGIC ===
-local function clamp(n, a, b)
-	if n < a then return a end
-	if n > b then return b end
-	return n
+local tpBindBtn = newBindRow("Teleport", 14, 160)
+local ncBindBtn = newBindRow("Noclip", 170, 160)
+
+-- --- VC RECONNECT ---
+local vcButton = Instance.new("TextButton")
+vcButton.Font = Enum.Font.GothamBold
+vcButton.TextSize = 14
+vcButton.TextColor3 = Color3.new(1,1,1)
+vcButton.Text = "VC Reconnect"
+vcButton.Size = UDim2.fromOffset(130, 28)
+vcButton.Position = UDim2.fromOffset(20, 100)
+vcButton.BackgroundColor3 = Color3.fromRGB(35,125,255)
+vcButton.BorderSizePixel = 0
+vcButton.Parent = panel
+Instance.new("UICorner", vcButton).CornerRadius = UDim.new(0,8)
+
+-- ========= SLIDER LOGIC (Walk Speed) =========
+local function alphaFromClick(frame:Frame, xPixel:number)
+    return clamp((xPixel - frame.AbsolutePosition.X) / frame.AbsoluteSize.X, 0, 1)
+end
+local function connectSlider(bar:Frame, fill:Frame, knob:ImageButton, minV:number, maxV:number, defaultV:number, onSet:(number)->())
+    local function toAlpha(v:number) return (v - minV) / (maxV - minV) end
+    local function fromAlpha(a:number) return math.floor(minV + a*(maxV-minV) + 0.5) end
+    local function setAlpha(a:number)
+        a = clamp(a, 0, 1)
+        fill.Size = UDim2.fromScale(a, 1)
+        knob.Position = UDim2.fromScale(a, 0.5)
+        onSet(fromAlpha(a))
+    end
+    setAlpha(toAlpha(defaultV))
+    bar.InputBegan:Connect(function(inp)
+        if inp.UserInputType == Enum.UserInputType.MouseButton1 then
+            setAlpha(alphaFromClick(bar, inp.Position.X))
+        end
+    end)
+    local dragging=false
+    knob.InputBegan:Connect(function(inp) if inp.UserInputType==Enum.UserInputType.MouseButton1 then dragging=true end end)
+    knob.InputEnded:Connect(function(inp) if inp.UserInputType==Enum.UserInputType.MouseButton1 then dragging=false end end)
+    UIS.InputChanged:Connect(function(inp)
+        if dragging and inp.UserInputType==Enum.UserInputType.MouseMovement then
+            setAlpha(alphaFromClick(bar, inp.Position.X))
+        end
+    end)
 end
 
-local function getHumanoid()
-	local char = player.Character or player.CharacterAdded:Wait()
-	return char:FindFirstChildOfClass("Humanoid") or char:WaitForChild("Humanoid")
-end
-
-local function applySpeed(spd)
-	local hum = getHumanoid()
-	if hum then hum.WalkSpeed = spd end
-end
-
-local function speedToAlpha(spd)
-	return (spd - MIN_SPEED) / (MAX_SPEED - MIN_SPEED)
-end
-
-local function alphaToSpeed(a)
-	return math.floor(MIN_SPEED + a * (MAX_SPEED - MIN_SPEED) + 0.5)
-end
-
-local function setUIFromAlpha(a)
-	a = clamp(a, 0, 1)
-	fill.Size = UDim2.fromScale(a, 1)
-	knob.Position = UDim2.fromScale(a, 0.5)
-	valueLabel.Text = tostring(alphaToSpeed(a))
-end
-
-local function setFromSpeed(spd)
-	spd = clamp(spd, MIN_SPEED, MAX_SPEED)
-	local a = speedToAlpha(spd)
-	setUIFromAlpha(a)
-	applySpeed(spd)
-end
-
--- Click bar to set
-bar.InputBegan:Connect(function(inp)
-	if inp.UserInputType == Enum.UserInputType.MouseButton1 then
-		local x = (inp.Position.X - bar.AbsolutePosition.X) / bar.AbsoluteSize.X
-		setFromSpeed(alphaToSpeed(x))
-	end
+connectSlider(walkBar, walkFill, walkKnob, SPEED_MIN, SPEED_MAX, SPEED_DEFAULT, function(val)
+    walkNumLabel.Text = tostring(val)
+    local hum = getHumanoid()
+    if hum then hum.WalkSpeed = val end
 end)
 
--- Drag knob
-local draggingKnob = false
-knob.InputBegan:Connect(function(inp)
-	if inp.UserInputType == Enum.UserInputType.MouseButton1 then
-		draggingKnob = true
-	end
-end)
-knob.InputEnded:Connect(function(inp)
-	if inp.UserInputType == Enum.UserInputType.MouseButton1 then
-		draggingKnob = false
-	end
+-- ========= TELEPORT =========
+local function teleportToMouse()
+    local hrp = getHRP()
+    local hit = mouse.Hit
+    if hit then
+        local targetPos = Vector3.new(hit.X, hit.Y + 3, hit.Z)
+        hrp.CFrame = CFrame.new(targetPos, targetPos + hrp.CFrame.LookVector)
+    end
+end
+
+-- ========= NOCLIP =========
+local function applyNoclipOnce()
+    local char = getCharacter()
+    for _, d in ipairs(char:GetDescendants()) do
+        if d:IsA("BasePart") then
+            if origCanCollide[d] == nil then
+                origCanCollide[d] = d.CanCollide
+            end
+            d.CanCollide = false
+        end
+    end
+end
+
+local function restoreCollision()
+    local char = getCharacter()
+    for _, d in ipairs(char:GetDescendants()) do
+        if d:IsA("BasePart") and origCanCollide[d] ~= nil then
+            d.CanCollide = origCanCollide[d]
+        end
+    end
+    origCanCollide = {}
+end
+
+local function startNoclip()
+    if noclipEnabled then return end
+    noclipEnabled = true
+    noclipBtn.Text = "Noclip: ON"
+    noclipBtn.BackgroundColor3 = Color3.fromRGB(30,90,50)
+
+    -- keep re-applying periodically to resist any part state changes
+    applyNoclipOnce()
+    keepApplyConn = RunService.Heartbeat:Connect(function()
+        if not noclipEnabled then return end
+        applyNoclipOnce()
+    end)
+end
+
+local function stopNoclip()
+    if not noclipEnabled then return end
+    noclipEnabled = false
+    noclipBtn.Text = "Noclip: OFF"
+    noclipBtn.BackgroundColor3 = Color3.fromRGB(80,30,30)
+    if keepApplyConn then keepApplyConn:Disconnect() keepApplyConn=nil end
+    restoreCollision()
+end
+
+local function toggleNoclip()
+    if noclipEnabled then stopNoclip() else startNoclip() end
+end
+
+noclipBtn.MouseButton1Click:Connect(toggleNoclip)
+
+-- ========= KEYBINDS =========
+local function keycodeToText(kc: Enum.KeyCode): string
+    return kc.Name
+end
+local function refreshBindButtons()
+    tpBindBtn.Text = keycodeToText(keybinds.Teleport)
+    ncBindBtn.Text = keycodeToText(keybinds.Noclip)
+end
+refreshBindButtons()
+
+local function startListen(actionName:string, btn: TextButton)
+    if listeningFor then return end
+    listeningFor = actionName
+    btn.Text = "Press key..."
+    btn.BackgroundColor3 = Color3.fromRGB(70, 70, 30)
+end
+
+tpBindBtn.MouseButton1Click:Connect(function() startListen("Teleport", tpBindBtn) end)
+ncBindBtn.MouseButton1Click:Connect(function() startListen("Noclip", ncBindBtn) end)
+
+UIS.InputBegan:Connect(function(inp, gp)
+    if gp then return end
+    if listeningFor and inp.UserInputType == Enum.UserInputType.Keyboard then
+        local picked = inp.KeyCode
+        if picked == Enum.KeyCode.Unknown or picked == Enum.KeyCode.Escape then return end
+        for action, kc in pairs(keybinds) do
+            if action ~= listeningFor and kc == picked then
+                keybinds[action] = Enum.KeyCode.Unknown
+            end
+        end
+        keybinds[listeningFor] = picked
+        listeningFor = nil
+        refreshBindButtons()
+        tpBindBtn.BackgroundColor3 = Color3.fromRGB(36,36,36)
+        ncBindBtn.BackgroundColor3 = Color3.fromRGB(36,36,36)
+    end
 end)
 
-UIS.InputChanged:Connect(function(inp)
-	if draggingKnob and inp.UserInputType == Enum.UserInputType.MouseMovement then
-		local x = (inp.Position.X - bar.AbsolutePosition.X) / bar.AbsoluteSize.X
-		x = clamp(x, 0, 1)
-		setFromSpeed(alphaToSpeed(x))
-	end
+UIS.InputBegan:Connect(function(inp, gp)
+    if gp or listeningFor then return end
+    if inp.UserInputType == Enum.UserInputType.Keyboard then
+        if keybinds.Teleport ~= Enum.KeyCode.Unknown and inp.KeyCode == keybinds.Teleport then
+            teleportToMouse()
+        elseif keybinds.Noclip ~= Enum.KeyCode.Unknown and inp.KeyCode == keybinds.Noclip then
+            toggleNoclip()
+        end
+    end
 end)
 
--- Reset + direct entry
-resetBtn.MouseButton1Click:Connect(function()
-	setFromSpeed(DEFAULT_SPEED)
-	inputBox.Text = ""
-end)
+-- ========= VC RECONNECT (cannot bypass bans) =========
+local VoiceChatService = game:GetService("VoiceChatService")
+local function vcReconnect()
+    -- Note: This cannot override Roblox moderation/bans.
+    if not VoiceChatService then
+        vcButton.Text = "VC: Not available"
+        vcButton.BackgroundColor3 = Color3.fromRGB(100,60,60)
+        return
+    end
+    vcButton.Text = "VC: Checking..."
+    task.spawn(function()
+        local ok1, enabled = pcall(function()
+            return VoiceChatService:IsVoiceChatEnabledForUserAsync(player.UserId)
+        end)
+        if not ok1 or not enabled then
+            vcButton.Text = "VC disabled/banned"
+            vcButton.BackgroundColor3 = Color3.fromRGB(100,60,60)
+            return
+        end
+        local ok2, perm = pcall(function()
+            return VoiceChatService:RequestMicrophonePermissionAsync()
+        end)
+        if not ok2 or not perm then
+            vcButton.Text = "Mic permission denied"
+            vcButton.BackgroundColor3 = Color3.fromRGB(100,60,60)
+            return
+        end
 
-inputBox.FocusLost:Connect(function()
-	local n = tonumber(inputBox.Text)
-	if n then
-		setFromSpeed(n)
-	end
-	inputBox.Text = ""
-end)
+        -- If your experience uses group-based voice, try join by group id here:
+        -- (Replace "YourGroupId" if you configured one; otherwise this will be a no-op.)
+        local joined = true
+        if VoiceChatService.JoinByGroupIdAsync then
+            local ok3 = pcall(function()
+                -- Provide your configured voice group id if applicable.
+                -- VoiceChatService:JoinByGroupIdAsync("YourGroupId")
+            end)
+            joined = ok3 and true or true -- if no group, assume fine
+        end
 
--- Init & respawn persistence
+        if joined then
+            vcButton.Text = "VC reconnected"
+            vcButton.BackgroundColor3 = Color3.fromRGB(35,125,255)
+        else
+            vcButton.Text = "VC join failed"
+            vcButton.BackgroundColor3 = Color3.fromRGB(100,60,60)
+        end
+    end)
+end
+vcButton.MouseButton1Click:Connect(vcReconnect)
+
+-- ========= INIT =========
 task.defer(function()
-	setFromSpeed(DEFAULT_SPEED)
+    local hum = getHumanoid()
+    if hum then hum.WalkSpeed = SPEED_DEFAULT end
 end)
-
 player.CharacterAdded:Connect(function()
-	task.defer(function()
-		local cur = tonumber(valueLabel.Text) or DEFAULT_SPEED
-		applySpeed(cur)
-	end)
+    task.defer(function()
+        local hum = getHumanoid()
+        if hum then hum.WalkSpeed = tonumber(walkNumLabel.Text) or SPEED_DEFAULT end
+        if noclipEnabled then
+            -- Reapply noclip on new character
+            applyNoclipOnce()
+        end
+    end)
 end)
