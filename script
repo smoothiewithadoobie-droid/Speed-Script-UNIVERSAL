@@ -1,25 +1,40 @@
 --!strict
--- Smoothies Script Hub — Movement page + Fly/Dash (with animations) + keybinds
+-- Smoothies Script Hub — with Currency page fully integrated
 -- LocalScript -> StarterPlayerScripts
 
+----------------------------------------------------------------
+-- Services
+----------------------------------------------------------------
 local Players = game:GetService("Players")
 local UIS = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
 local GuiService = game:GetService("GuiService")
 local TweenService = game:GetService("TweenService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local player = Players.LocalPlayer
 local mouse = player:GetMouse()
 local camera = workspace.CurrentCamera
 
--- ===== CONFIG =====
+----------------------------------------------------------------
+-- Config
+----------------------------------------------------------------
 local SPEED_MIN, SPEED_MAX, SPEED_DEFAULT = 8, 500, 16
 local JUMP_MIN,  JUMP_MAX,  JUMP_DEFAULT = 0, 200, 50
 local LOAD_SECONDS = 10
 local DEV_PORTAL_URL = "https://create.roblox.com/dashboard/creations"
 local DISCORD_INVITE  = "https://discord.gg/WwADpVwRvu"
 
--- ===== STATE =====
+local pal = {
+	panel = Color3.fromRGB(22,22,26), header = Color3.fromRGB(28,28,32), side = Color3.fromRGB(26,26,30),
+	accent = Color3.fromRGB(104,96,176), green = Color3.fromRGB(110,170,80),
+	red = Color3.fromRGB(160,70,70), orange = Color3.fromRGB(255,170,90), cyan = Color3.fromRGB(86,180,140),
+	buttonDark = Color3.fromRGB(45,45,55), slate = Color3.fromRGB(80,110,140), grayBtn = Color3.fromRGB(80,85,95)
+}
+
+----------------------------------------------------------------
+-- State
+----------------------------------------------------------------
 local keybinds = {
 	Teleport = Enum.KeyCode.F,
 	Noclip   = Enum.KeyCode.X,
@@ -41,16 +56,23 @@ local hitboxAdded = false
 local btoolsGiven = false
 local bookmarks: {Vector3} = {}
 
--- movement (new)
+-- movement
 local flyEnabled = false
 local flyLV: LinearVelocity? = nil
 local flyAO: AlignOrientation? = nil
-local flySpeed = 60 -- default
+local flySpeed = 60
 local dashCooldown = 0.8
 local dashDistance  = 35
 local lastDashTime = 0
 
--- ===== HELPERS =====
+-- currency
+local CurrencyRF: RemoteFunction? = ReplicatedStorage:FindFirstChild("Smoothies_CurrencyRF") :: RemoteFunction?
+local scannedList: {{Name:string, Type:string}} = {}
+local selectedCurrency: string? = nil
+
+----------------------------------------------------------------
+-- Helpers
+----------------------------------------------------------------
 local function clamp(n:number, a:number, b:number) return (n<a and a) or (n>b and b) or n end
 local function getCharacter() return player.Character or player.CharacterAdded:Wait() end
 local function getHumanoid(): Humanoid
@@ -62,7 +84,9 @@ local function getHRP(): BasePart
 	return (c:FindFirstChild("HumanoidRootPart") or c:WaitForChild("HumanoidRootPart")) :: BasePart
 end
 
--- ===== ROOT GUI + LOADER =====
+----------------------------------------------------------------
+-- ROOT GUI + LOADER
+----------------------------------------------------------------
 local gui = Instance.new("ScreenGui")
 gui.Name = "SmoothiesScriptHub"
 gui.IgnoreGuiInset = true
@@ -70,7 +94,7 @@ gui.ResetOnSpawn = false
 gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 gui.Parent = player:WaitForChild("PlayerGui")
 
--- mini loader
+-- mini loader window
 local loader = Instance.new("Frame")
 loader.Size = UDim2.fromOffset(440, 126)
 loader.Position = UDim2.new(0.5, -220, 0.25, 0)
@@ -79,56 +103,42 @@ loader.BorderSizePixel = 0
 loader.Parent = gui
 Instance.new("UICorner", loader).CornerRadius = UDim.new(0,12)
 
-local lt = Instance.new("TextLabel")
-lt.BackgroundTransparency = 1; lt.Font = Enum.Font.GothamBold; lt.TextSize = 20
-lt.Text = "Smoothies Script Hub"; lt.TextColor3 = Color3.new(1,1,1)
-lt.Position = UDim2.fromOffset(16, 12); lt.Size = UDim2.fromOffset(400, 24); lt.Parent = loader
-
-local ls = Instance.new("TextLabel")
-ls.BackgroundTransparency = 1; ls.Font = Enum.Font.Gotham; ls.TextSize = 14
-ls.Text = "Loading script..."; ls.TextColor3 = Color3.fromRGB(210,210,220)
-ls.Position = UDim2.fromOffset(16, 44); ls.Size = UDim2.fromOffset(400, 18); ls.Parent = loader
+local function mkLabel(parent, txt, size, bold, pos)
+	local l = Instance.new("TextLabel")
+	l.BackgroundTransparency = 1
+	l.Font = bold and Enum.Font.GothamBold or Enum.Font.Gotham
+	l.TextSize = size; l.Text = txt; l.TextColor3 = Color3.new(1,1,1)
+	l.TextXAlignment = Enum.TextXAlignment.Left
+	l.Position = pos; l.Size = UDim2.fromOffset(400, size+6); l.Parent = parent
+	return l
+end
+mkLabel(loader, "Smoothies Script Hub", 20, true, UDim2.fromOffset(16, 12))
+local ls = mkLabel(loader, "Loading script...", 14, false, UDim2.fromOffset(16, 44))
+ls.TextColor3 = Color3.fromRGB(210,210,220)
 
 local track = Instance.new("Frame")
 track.BackgroundColor3 = Color3.fromRGB(45,45,52); track.BorderSizePixel = 0
 track.Position = UDim2.fromOffset(16, 72); track.Size = UDim2.fromOffset(408, 12); track.Parent = loader
 Instance.new("UICorner", track).CornerRadius = UDim.new(0,6)
-
 local fill = Instance.new("Frame")
 fill.AnchorPoint = Vector2.new(0,0.5); fill.Position = UDim2.fromScale(0,0.5)
-fill.Size = UDim2.fromScale(0,1); fill.BackgroundColor3 = Color3.fromRGB(86,180,140)
+fill.Size = UDim2.fromScale(0,1); fill.BackgroundColor3 = pal.cyan
 fill.BorderSizePixel = 0; fill.Parent = track
 Instance.new("UICorner", fill).CornerRadius = UDim.new(0,6)
-
-local pct = Instance.new("TextLabel")
-pct.BackgroundTransparency = 1; pct.Font = Enum.Font.Gotham; pct.TextSize = 14
-pct.TextColor3 = Color3.fromRGB(210,210,220); pct.Text = "0%"
-pct.Position = UDim2.fromOffset(16, 94); pct.Size = UDim2.fromOffset(120, 18); pct.Parent = loader
+local pct = mkLabel(loader, "0%", 14, false, UDim2.fromOffset(16, 94))
+pct.TextColor3 = Color3.fromRGB(210,210,220)
 
 local startTime = time()
 TweenService:Create(fill, TweenInfo.new(LOAD_SECONDS, Enum.EasingStyle.Quad), {Size = UDim2.fromScale(1,1)}):Play()
 local progConn = RunService.RenderStepped:Connect(function()
-	local p = math.clamp((time()-startTime)/LOAD_SECONDS,0,1); pct.Text = string.format("%d%%", math.floor(p*100+0.5))
+	local p = math.clamp((time()-startTime)/LOAD_SECONDS,0,1)
+	pct.Text = string.format("%d%%", math.floor(p*100+0.5))
 	if p>=1 then progConn:Disconnect() end
 end)
 
--- ===== PALETTE =====
-local pal = {
-	panel = Color3.fromRGB(22,22,26), header = Color3.fromRGB(28,28,32), side = Color3.fromRGB(26,26,30),
-	accent = Color3.fromRGB(104, 96, 176), green = Color3.fromRGB(110,170,80),
-	red = Color3.fromRGB(160,70,70), orange = Color3.fromRGB(255,170,90), cyan = Color3.fromRGB(86,180,140),
-	buttonDark = Color3.fromRGB(45,45,55), slate = Color3.fromRGB(80,110,140), grayBtn = Color3.fromRGB(80,85,95)
-}
-
--- ===== MAIN WINDOW (built after load) =====
-local panel: Frame; local header: Frame; local body: Frame
-local sidebar: Frame; local pages: Frame
-local pageMain: Frame; local pageMovement: Frame; local pageUtility: Frame; local pageCredits: Frame
-
-local windowSize = Vector2.new(980, 620) -- bigger
-local minSize   = Vector2.new(760, 480)
-local maxSize   = Vector2.new(1500, 1000)
-
+----------------------------------------------------------------
+-- UI Building bits
+----------------------------------------------------------------
 local function label(parent: Instance, txt: string, size: number, bold: boolean, x: number, y: number, color: Color3?)
 	local l = Instance.new("TextLabel")
 	l.BackgroundTransparency = 1
@@ -180,7 +190,16 @@ local function connectSlider(trackF:Frame, fillF:Frame, knob:ImageButton, minV:n
 	return function(v:number) setAlpha(toAlpha(v)) end
 end
 
--- build UI after loader
+----------------------------------------------------------------
+-- Build UI after loader
+----------------------------------------------------------------
+local panel: Frame; local header: Frame; local body: Frame
+local sidebar: Frame; local pages: Frame
+local pageMain: Frame; local pageMovement: Frame; local pageUtility: Frame; local pageCredits: Frame; local pageCurrency: Frame
+local windowSize = Vector2.new(980, 620)
+local minSize   = Vector2.new(760, 480)
+local maxSize   = Vector2.new(1500, 1000)
+
 local function buildUI()
 	-- panel
 	panel = Instance.new("Frame")
@@ -245,9 +264,10 @@ local function buildUI()
 	local btnMain     = sideBtn("Main")
 	local btnMovement = sideBtn("Movement")
 	local btnUtility  = sideBtn("Utility")
+	local btnCurrency = sideBtn("Currency") -- NEW
 	local btnCredits  = sideBtn("Credits")
 
-	-- pages container
+	-- pages
 	pages = Instance.new("Frame")
 	pages.Size = UDim2.fromOffset(body.Size.X.Offset - 190, body.Size.Y.Offset)
 	pages.Position = UDim2.fromOffset(190, 0)
@@ -255,7 +275,7 @@ local function buildUI()
 	pages.Parent = body
 
 	local function makePage() local f=Instance.new("Frame"); f.BackgroundTransparency=1; f.Size=UDim2.fromScale(1,1); f.Visible=false; f.Parent=pages; return f end
-	pageMain = makePage(); pageMovement = makePage(); pageUtility = makePage(); pageCredits = makePage()
+	pageMain, pageMovement, pageUtility, pageCurrency, pageCredits = makePage(), makePage(), makePage(), makePage(), makePage()
 
 	local function showPage(which: Frame)
 		for _,c in ipairs(pages:GetChildren()) do if c:IsA("Frame") then c.Visible = (c==which) end end
@@ -265,15 +285,14 @@ local function buildUI()
 	btnMain.MouseButton1Click:Connect(function() showPage(pageMain) end)
 	btnMovement.MouseButton1Click:Connect(function() showPage(pageMovement) end)
 	btnUtility.MouseButton1Click:Connect(function() showPage(pageUtility) end)
+	btnCurrency.MouseButton1Click:Connect(function() showPage(pageCurrency) end)
 	btnCredits.MouseButton1Click:Connect(function() showPage(pageCredits) end)
 
 	-- resize grip
 	local grip = Instance.new("Frame")
-	grip.Size = UDim2.fromOffset(16,16)
-	grip.AnchorPoint = Vector2.new(1,1)
+	grip.Size = UDim2.fromOffset(16,16); grip.AnchorPoint = Vector2.new(1,1)
 	grip.Position = UDim2.new(1, -6, 1, -6)
-	grip.BackgroundColor3 = Color3.fromRGB(120,120,130)
-	grip.BorderSizePixel = 0
+	grip.BackgroundColor3 = Color3.fromRGB(120,120,130); grip.BorderSizePixel = 0
 	grip.Parent = panel
 	Instance.new("UICorner", grip).CornerRadius = UDim.new(0,4)
 
@@ -314,7 +333,7 @@ local function buildUI()
 		end)
 	end
 
-	-- minimize / close (+ fade away unload)
+	-- unload confirm (fade on yes)
 	local overlay = Instance.new("Frame")
 	overlay.Visible=false; overlay.BackgroundColor3=Color3.new(0,0,0); overlay.BackgroundTransparency=0.35
 	overlay.Size=UDim2.fromScale(1,1); overlay.Parent=panel
@@ -360,28 +379,26 @@ local function buildUI()
 		gui:Destroy()
 	end
 
-	local minBtn  = header:FindFirstChildWhichIsA("TextButton")
-	local closeBtn = header:FindFirstChildWhichIsA("TextButton", true)
-	-- they’re created in order; find by text
-	for _,b in ipairs(header:GetChildren()) do
-		if b:IsA("TextButton") and b.Text=="-" then minBtn=b end
-		if b:IsA("TextButton") and b.Text=="X" then closeBtn=b end
-	end
 	minBtn.MouseButton1Click:Connect(function()
 		minimized = not minimized
 		sidebar.Visible = not minimized
 		pages.Visible   = not minimized
-		if minimized then TweenService:Create(panel, TweenInfo.new(0.15), {Size = UDim2.fromOffset(panel.Size.X.Offset, 64)}):Play()
-		else TweenService:Create(panel, TweenInfo.new(0.15), {Size = UDim2.fromOffset(windowSize.X, windowSize.Y)}):Play() end
+		if minimized then
+			TweenService:Create(panel, TweenInfo.new(0.15), {Size = UDim2.fromOffset(panel.Size.X.Offset, 64)}):Play()
+		else
+			TweenService:Create(panel, TweenInfo.new(0.15), {Size = UDim2.fromOffset(windowSize.X, windowSize.Y)}):Play()
+		end
 	end)
 	closeBtn.MouseButton1Click:Connect(function() overlay.Visible = true end)
 	noBtn.MouseButton1Click:Connect(function() overlay.Visible = false end)
 	yesBtn.MouseButton1Click:Connect(function() fullUnload() end)
 
-	-- ========= PAGE: MAIN =========
+	------------------------------------------------------------
+	-- PAGE: MAIN
+	------------------------------------------------------------
 	label(pageMain, "Main", 22, true, 14, 12)
-
 	local workW = pages.Size.X.Offset
+
 	label(pageMain, "Walk Speed", 14, false, 14, 56)
 	local walkVal = label(pageMain, tostring(SPEED_DEFAULT), 14, false, workW - 40, 56); walkVal.TextXAlignment = Enum.TextXAlignment.Right
 	local walkTrack, walkFill, walkKnob = makeTrack(pageMain, 14, 76, workW - 40, pal.cyan)
@@ -408,7 +425,7 @@ local function buildUI()
 		speedBox.Text = ""
 	end)
 
-	-- buttons (3-col)
+	-- 3-col buttons
 	local btnW = math.floor((workW - 40 - 20)/3)
 	local teleportBtn = makePill(pageMain, "Teleport (keybind)", UDim2.fromOffset(16, 210), UDim2.fromOffset(btnW, 36), pal.accent)
 	local noclipBtn   = makePill(pageMain, "Noclip: OFF",        UDim2.fromOffset(20+btnW, 210), UDim2.fromOffset(btnW, 36), pal.red)
@@ -418,12 +435,10 @@ local function buildUI()
 	local resetJump   = makePill(pageMain, "Reset Jump",         UDim2.fromOffset(20+btnW, 254), UDim2.fromOffset(btnW, 36), pal.red)
 	local portalBtn   = makePill(pageMain, "Dev Portal",         UDim2.fromOffset(24+btnW*2, 254), UDim2.fromOffset(btnW, 36), pal.accent)
 
-	-- ESP/Hitboxes
 	local espBtn      = makePill(pageMain, "Player Boxes: OFF",  UDim2.fromOffset(24+btnW*2, 294), UDim2.fromOffset(btnW, 36), pal.grayBtn)
 	local addHBBtn    = makePill(pageMain, "Add Hitboxes",       UDim2.fromOffset(24+btnW*2, 334), UDim2.fromOffset(btnW, 36), Color3.fromRGB(180,80,80))
 	local rmHBBtn     = makePill(pageMain, "Remove Hitboxes",    UDim2.fromOffset(24+btnW*2, 374), UDim2.fromOffset(btnW, 36), Color3.fromRGB(95,95,105))
 
-	-- Bookmarks
 	label(pageMain, "Teleport Bookmarks", 16, true, 14, 304)
 	local addBookmarkBtn = makePill(pageMain, "Add Bookmark (current)", UDim2.fromOffset(16, 330), UDim2.fromOffset(btnW*2+4, 36), pal.cyan)
 	local bookmarksFrame = Instance.new("Frame")
@@ -432,13 +447,15 @@ local function buildUI()
 	local bookmarksLayout = Instance.new("UIListLayout", bookmarksFrame)
 	bookmarksLayout.SortOrder = Enum.SortOrder.LayoutOrder; bookmarksLayout.Padding = UDim.new(0,8)
 
-	-- keybinds (now includes Fly/Dash)
+	-- keybind display/rebinders
 	label(pageMain, "Keybinds", 16, true, 14, windowSize.Y-56-70)
 	local tpBindBtn  = makePill(pageMain, "Teleport: "..keybinds.Teleport.Name, UDim2.fromOffset(16, windowSize.Y-56-40), UDim2.fromOffset(btnW, 34), pal.buttonDark)
 	local ncBindBtn  = makePill(pageMain, "Noclip: "..keybinds.Noclip.Name,     UDim2.fromOffset(20+btnW, windowSize.Y-56-40), UDim2.fromOffset(btnW, 34), pal.buttonDark)
 	local flyBindBtn = makePill(pageMain, "Fly: "..keybinds.Fly.Name,           UDim2.fromOffset(24+btnW*2, windowSize.Y-56-40), UDim2.fromOffset(btnW, 34), pal.buttonDark)
 
-	-- ========= PAGE: MOVEMENT =========
+	------------------------------------------------------------
+	-- PAGE: MOVEMENT
+	------------------------------------------------------------
 	label(pageMovement, "Movement", 22, true, 14, 12)
 
 	-- Fly toggle + speed
@@ -446,46 +463,178 @@ local function buildUI()
 	label(pageMovement, "Fly Speed", 14, false, 16, 108)
 	local flySpeedVal = label(pageMovement, tostring(flySpeed), 14, false, 16+520, 108); flySpeedVal.TextXAlignment = Enum.TextXAlignment.Right
 	local flyTrack, flyFill, flyKnob = makeTrack(pageMovement, 16, 128, 520, pal.cyan)
-
 	local setFlySpeed = connectSlider(flyTrack, flyFill, flyKnob, 10, 200, flySpeed, function(v) flySpeed=v; flySpeedVal.Text=tostring(v) end)
 
-	-- Dash settings
+	-- Dash
 	local dashBtn = makePill(pageMovement, "Dash ("..keybinds.Dash.Name..")", UDim2.fromOffset(260, 60), UDim2.fromOffset(220, 36), pal.accent)
 	label(pageMovement, "Dash Distance", 14, false, 16, 180)
 	local dashDistVal = label(pageMovement, tostring(dashDistance), 14, false, 16+520, 180); dashDistVal.TextXAlignment=Enum.TextXAlignment.Right
 	local dashDistTrack, dashDistFill, dashDistKnob = makeTrack(pageMovement, 16, 200, 520, pal.orange)
 	local setDashDist = connectSlider(dashDistTrack, dashDistFill, dashDistKnob, 10, 80, dashDistance, function(v) dashDistance=v; dashDistVal.Text=tostring(v) end)
-
 	label(pageMovement, "Dash Cooldown (seconds)", 14, false, 16, 232)
 	local dashCdVal = label(pageMovement, string.format("%.1f", dashCooldown), 14, false, 16+520, 232); dashCdVal.TextXAlignment=Enum.TextXAlignment.Right
 	local dashCdTrack, dashCdFill, dashCdKnob = makeTrack(pageMovement, 16, 252, 520, pal.slate)
-	local setDashCd = connectSlider(dashCdTrack, dashCdFill, dashCdKnob, 0, 3, dashCooldown*10, function(v) dashCooldown = v/10; dashCdVal.Text = string.format("%.1f", dashCooldown) end)
+	local setDashCd = connectSlider(dashCdTrack, dashCdFill, dashCdKnob, 0, 30, math.floor(dashCooldown*10+0.5), function(v) dashCooldown=v/10; dashCdVal.Text=string.format("%.1f", dashCooldown) end)
 
-	-- ========= PAGE: UTILITY =========
+	------------------------------------------------------------
+	-- PAGE: UTILITY
+	------------------------------------------------------------
 	label(pageUtility, "Utility", 22, true, 14, 12)
 	local panicBtn = makePill(pageUtility, "Panic (Unload)", UDim2.fromOffset(16, 60), UDim2.fromOffset(220,36), pal.red)
+	local fpsParagraph = label(pageUtility, "FPS: --", 14, false, 16, 108)
 
-	-- ========= PAGE: CREDITS =========
+	------------------------------------------------------------
+	-- PAGE: CREDITS
+	------------------------------------------------------------
 	label(pageCredits, "Credits", 22, true, 14, 12)
 	label(pageCredits, "Smoothalicious was here", 16, false, 14, 54)
 	local discordBtn = makePill(pageCredits, "Copy Invite / Open Discord", UDim2.fromOffset(14, 96), UDim2.fromOffset(320, 36), pal.accent)
 
-	-- ===== FEATURE WIRING =====
+	------------------------------------------------------------
+	-- PAGE: CURRENCY (NEW)
+	------------------------------------------------------------
+	label(pageCurrency, "Currency", 22, true, 14, 12)
+	local status = label(pageCurrency, "", 14, false, 14, 46, Color3.fromRGB(210,210,220))
+	local function setStatus(msg:string, ok:boolean?)
+		status.Text = msg; status.TextColor3 = ok and Color3.fromRGB(110,190,120) or Color3.fromRGB(230,170,120)
+	end
 
-	-- bookmarks UI
+	local scanBtn = makePill(pageCurrency, "Scan currencies", UDim2.fromOffset(14, 76), UDim2.fromOffset(160, 30), pal.accent)
+	local listFrame = Instance.new("Frame")
+	listFrame.BackgroundTransparency=1; listFrame.Size = UDim2.fromOffset(420, 210); listFrame.Position = UDim2.fromOffset(14, 116); listFrame.Parent = pageCurrency
+	local listLayout = Instance.new("UIListLayout", listFrame); listLayout.Padding = UDim.new(0,6)
+
+	local function rebuildCurrencyList()
+		for _,c in ipairs(listFrame:GetChildren()) do if not c:IsA("UIListLayout") then c:Destroy() end end
+		selectedCurrency = nil
+		for _,entry in ipairs(scannedList) do
+			local b = makePill(listFrame, entry.Name.."  ·  "..entry.Type, UDim2.fromOffset(0,0), UDim2.fromOffset(400, 28), pal.buttonDark)
+			b.MouseButton1Click:Connect(function() selectedCurrency=entry.Name; setStatus("Selected: "..selectedCurrency, true) end)
+		end
+		if #scannedList==0 then label(listFrame, "No numeric leaderstats found.", 14, false, 0, 0) end
+	end
+
+	local function clientScan()
+		local ls = player:FindFirstChild("leaderstats")
+		local list: {{Name:string, Type:string}} = {}
+		if ls then
+			for _,ch in ipairs(ls:GetChildren()) do
+				if ch:IsA("IntValue") or ch:IsA("NumberValue") or ch:IsA("DoubleConstrainedValue") or ch:IsA("IntConstrainedValue") then
+					table.insert(list, {Name=ch.Name, Type=ch.ClassName})
+				end
+			end
+		end
+		scannedList = list; rebuildCurrencyList()
+	end
+	local function serverScan()
+		if not CurrencyRF then setStatus("Server hook missing; scanning client leaderstats.", false); clientScan(); return end
+		local ok, res = pcall(function() return CurrencyRF:InvokeServer("Scan") end)
+		if not ok then setStatus("Scan failed; using client scan.", false); clientScan(); return end
+		if res and res[1]==true then scannedList=res[2]; rebuildCurrencyList(); setStatus("Scan complete.", true)
+		else setStatus("Scan error; using client scan.", false); clientScan() end
+	end
+	scanBtn.MouseButton1Click:Connect(serverScan)
+	clientScan()
+
+	-- amount controls
+	label(pageCurrency, "Adjust amount (selected currency):", 14, true, 460, 116)
+	local amtBox = Instance.new("TextBox")
+	amtBox.PlaceholderText="Amount (number)"; amtBox.Font=Enum.Font.Gotham; amtBox.TextSize=14; amtBox.TextColor3=Color3.fromRGB(255,255,255)
+	amtBox.BackgroundColor3=Color3.fromRGB(36,36,42); amtBox.BorderSizePixel=0; amtBox.Size=UDim2.fromOffset(220,28); amtBox.Position=UDim2.fromOffset(460, 140); amtBox.Parent=pageCurrency
+	Instance.new("UICorner", amtBox).CornerRadius = UDim.new(0,8)
+	local addBtn = makePill(pageCurrency, "Add", UDim2.fromOffset(690, 140), UDim2.fromOffset(100, 28), pal.green)
+	local setBtn = makePill(pageCurrency, "Set", UDim2.fromOffset(800, 140), UDim2.fromOffset(100, 28), pal.orange)
+
+	-- rename controls
+	label(pageCurrency, "Rename selected currency:", 14, true, 460, 184)
+	local renameBox = Instance.new("TextBox")
+	renameBox.PlaceholderText="New name (1–32)"
+	renameBox.Font=Enum.Font.Gotham; renameBox.TextSize=14; renameBox.TextColor3=Color3.fromRGB(255,255,255)
+	renameBox.BackgroundColor3=Color3.fromRGB(36,36,42); renameBox.BorderSizePixel=0
+	renameBox.Size=UDim2.fromOffset(320,28); renameBox.Position=UDim2.fromOffset(460, 208); renameBox.Parent=pageCurrency
+	Instance.new("UICorner", renameBox).CornerRadius=UDim.new(0,8)
+	local renameBtn = makePill(pageCurrency, "Apply Rename", UDim2.fromOffset(790, 208), UDim2.fromOffset(160, 28), pal.accent)
+
+	-- currency helpers
+	local function getLocalValue(name:string): number?
+		local ls = player:FindFirstChild("leaderstats"); local v = ls and ls:FindFirstChild(name)
+		if v and v:IsA("ValueBase") then
+			local ok,n = pcall(function() return (v :: any).Value end)
+			if ok and typeof(n)=="number" then return n end
+		end
+		return nil
+	end
+	local function trySetClient(name:string, amount:number): boolean
+		local ls = player:FindFirstChild("leaderstats"); local v = ls and ls:FindFirstChild(name)
+		if v and v:IsA("ValueBase") then
+			local ok = pcall(function() (v :: any).Value = amount end)
+			if not ok then return false end
+			RunService.RenderStepped:Wait()
+			local after = getLocalValue(name)
+			return (after ~= nil and math.abs(after - amount) < 1e-6)
+		end
+		return false
+	end
+	local function doSetOrAdd(mode:"Set"|"Add")
+		if not selectedCurrency then setStatus("Select a currency first.", false); return end
+		local n = tonumber(amtBox.Text or "")
+		if not n then setStatus("Enter a valid number.", false); return end
+		local target = (mode=="Add") and ((getLocalValue(selectedCurrency) or 0) + n) or n
+
+		if CurrencyRF then
+			local ok, res = pcall(function() return CurrencyRF:InvokeServer("SetValue", {name = selectedCurrency, amount = target}) end)
+			if ok and res and res[1]==true then setStatus((mode=="Add" and "Added " or "Set to ")..target.." for "..selectedCurrency, true); serverScan(); return end
+			setStatus("Server refused. Trying client fallback…", false)
+		end
+		if trySetClient(selectedCurrency, target) then
+			setStatus((mode=="Add" and "Added " or "Set to ")..target.." (client). Check if it sticks.", true)
+		else
+			setStatus("Client write blocked by server. Add server helper for full control.", false)
+		end
+	end
+	addBtn.MouseButton1Click:Connect(function() doSetOrAdd("Add") end)
+	setBtn.MouseButton1Click:Connect(function() doSetOrAdd("Set") end)
+
+	renameBtn.MouseButton1Click:Connect(function()
+		if not selectedCurrency then setStatus("Select a currency first.", false); return end
+		local newName = (renameBox.Text or ""):gsub("^%s+",""):gsub("%s+$","")
+		if #newName<1 or #newName>32 then setStatus("Name must be 1–32 chars.", false); return end
+
+		if CurrencyRF then
+			local ok, res = pcall(function() return CurrencyRF:InvokeServer("Rename", {oldName = selectedCurrency, newName = newName}) end)
+			if ok and res and res[1]==true then setStatus("Renamed to "..newName, true); serverScan(); return end
+			setStatus("Server refused rename. Trying client fallback…", false)
+		end
+
+		local ls = player:FindFirstChild("leaderstats")
+		local obj = ls and ls:FindFirstChild(selectedCurrency)
+		if obj and obj:IsA("ValueBase") then
+			local ok = pcall(function() obj.Name = newName end)
+			if ok then setStatus("Renamed locally to "..newName..". Check if it sticks.", true); clientScan()
+			else setStatus("Client rename blocked. Add server helper.", false) end
+		else
+			setStatus("Currency not found to rename.", false)
+		end
+	end)
+
+	------------------------------------------------------------
+	-- FEATURES: bookmarks / dev portal
+	------------------------------------------------------------
 	local function rebuildBookmarksUI()
-		for _,c in ipairs(bookmarksFrame:GetChildren()) do if not c:IsA("UIListLayout") then c:Destroy() end end
+		local bf = pageMain:FindFirstChildOfClass("Frame")
+		if not bf then return end
+		for _,c in ipairs(bf:GetChildren()) do if not c:IsA("UIListLayout") then c:Destroy() end end
 		for i,pos in ipairs(bookmarks) do
-			local b = makePill(bookmarksFrame, ("#%d — Teleport"):format(i), UDim2.fromOffset(0,0), UDim2.fromOffset(240,28), pal.slate)
+			local b = makePill(bf, ("#%d — Teleport"):format(i), UDim2.fromOffset(0,0), UDim2.fromOffset(240,28), pal.slate)
 			b.MouseButton1Click:Connect(function() pcall(function() getHRP().CFrame = CFrame.new(pos + Vector3.new(0,3,0)) end) end)
 		end
 	end
 	addBookmarkBtn.MouseButton1Click:Connect(function() table.insert(bookmarks, getHRP().Position); rebuildBookmarksUI() end)
-
-	-- Dev portal
 	portalBtn.MouseButton1Click:Connect(function() pcall(function() GuiService:OpenBrowserWindow(DEV_PORTAL_URL) end) end)
 
-	-- ESP boxes
+	------------------------------------------------------------
+	-- ESP
+	------------------------------------------------------------
 	local espOn=false
 	local function ensureHighlight(plr: Player)
 		if plr==player or not plr.Character or highlights[plr] then return end
@@ -497,7 +646,9 @@ local function buildUI()
 	local function espDisable() for p,h in pairs(highlights) do if h then h:Destroy() end end highlights={}; espBtn.Text="Player Boxes: OFF"; espBtn.BackgroundColor3 = pal.grayBtn; espOn=false end
 	espBtn.MouseButton1Click:Connect(function() if espOn then espDisable() else espEnable() end end)
 
-	-- Hitboxes (visible so you can confirm)
+	------------------------------------------------------------
+	-- Hitboxes
+	------------------------------------------------------------
 	local function getOrCreateHitbox(char: Model): BasePart?
 		local hrp = char:FindFirstChild("HumanoidRootPart"); if not hrp or not hrp:IsA("BasePart") then return nil end
 		local hb = char:FindFirstChild("Hitbox")
@@ -513,7 +664,9 @@ local function buildUI()
 	addHBBtn.MouseButton1Click:Connect(function() hitboxAdded=true; addHitboxesAll() end)
 	rmHBBtn.MouseButton1Click:Connect(function() hitboxAdded=false; removeHitboxesAll() end)
 
+	------------------------------------------------------------
 	-- Noclip
+	------------------------------------------------------------
 	local function applyNoclipOnce()
 		local char = getCharacter()
 		for _, d in ipairs(char:GetDescendants()) do
@@ -543,7 +696,9 @@ local function buildUI()
 	local function toggleNoclip() if noclipEnabled then stopNoclip() else startNoclip() end end
 	noclipBtn.MouseButton1Click:Connect(function() if not unloaded then toggleNoclip() end end)
 
+	------------------------------------------------------------
 	-- BTools
+	------------------------------------------------------------
 	local function mkTool(name:string) local t=Instance.new("Tool"); t.RequiresHandle=false; t.Name=name; t.CanBeDropped=false; return t end
 	btoolsBtn.MouseButton1Click:Connect(function()
 		if unloaded or btoolsGiven then return end; btoolsGiven=true
@@ -564,12 +719,12 @@ local function buildUI()
 		mv.Parent=bp
 	end)
 
-	-- Teleport action keybind
+	------------------------------------------------------------
+	-- Teleport + keybind rebinding
+	------------------------------------------------------------
 	local function teleportToMouse()
 		local hrp = getHRP(); local hit = mouse.Hit; if hit then hrp.CFrame = CFrame.new(hit.Position + Vector3.new(0,3,0)) end
 	end
-
-	-- Rebinding (incl. Fly/Dash)
 	local function beginListen(which: string, btn: TextButton)
 		if listening then return end
 		listening = which; btn.Text = which..": Press..."; btn.BackgroundColor3 = Color3.fromRGB(70,70,30)
@@ -584,76 +739,80 @@ local function buildUI()
 		if listening and inp.UserInputType==Enum.UserInputType.Keyboard then
 			local kc = inp.KeyCode
 			if kc ~= Enum.KeyCode.Unknown and kc ~= Enum.KeyCode.Escape then
-				local targetBtn: TextButton? = nil
-				if listening == "Teleport" then keybinds.Teleport = kc; targetBtn = tpBindBtn
-				elseif listening == "Noclip" then keybinds.Noclip = kc; targetBtn = ncBindBtn
-				elseif listening == "Fly" then keybinds.Fly = kc; targetBtn = flyBindBtn end
-				if targetBtn then targetBtn.Text = listening..": "..kc.Name; targetBtn.BackgroundColor3 = pal.buttonDark end
+				if listening == "Teleport" then keybinds.Teleport = kc; tpBindBtn.Text = "Teleport: "..kc.Name; tpBindBtn.BackgroundColor3 = pal.buttonDark
+				elseif listening == "Noclip" then keybinds.Noclip = kc;   ncBindBtn.Text = "Noclip: "..kc.Name;   ncBindBtn.BackgroundColor3 = pal.buttonDark
+				elseif listening == "Fly" then keybinds.Fly = kc;         flyBindBtn.Text= "Fly: "..kc.Name;     flyBindBtn.BackgroundColor3 = pal.buttonDark end
 				listening = nil
 				return
 			end
 		end
 		-- actions
-		if inp.UserInputType==Enum.UserInputType.Keyboard then
-			if inp.KeyCode == keybinds.Teleport and not gp then teleportToMouse()
-			elseif inp.KeyCode == keybinds.Noclip and not gp then toggleNoclip()
-			elseif inp.KeyCode == keybinds.Fly and not gp then
-				-- toggle fly
-				if flyEnabled then
-					flyEnabled=false
-					flyToggleBtn.Text = "Fly: OFF"; flyToggleBtn.BackgroundColor3 = pal.red
-					if flyLV then flyLV:Destroy(); flyLV=nil end
-					if flyAO then flyAO:Destroy(); flyAO=nil end
-					pcall(function() getHumanoid():ChangeState(Enum.HumanoidStateType.Running) end)
-					TweenService:Create(camera, TweenInfo.new(0.18), {FieldOfView = 70}):Play()
-				else
-					flyEnabled=true
-					flyToggleBtn.Text = "Fly: ON"; flyToggleBtn.BackgroundColor3 = Color3.fromRGB(60,130,90)
-					local hrp = getHRP()
-					local att = Instance.new("Attachment"); att.Parent = hrp
-					flyLV = Instance.new("LinearVelocity")
-					flyLV.Attachment0 = att; flyLV.MaxForce = 1e5; flyLV.RelativeTo = Enum.ActuatorRelativeTo.World
-					flyLV.Parent = hrp
-					flyAO = Instance.new("AlignOrientation")
-					flyAO.Attachment0 = att; flyAO.Mode = Enum.OrientationAlignmentMode.OneAttachment
-					flyAO.Responsiveness = 20; flyAO.Parent = hrp
-					getHumanoid():ChangeState(Enum.HumanoidStateType.Physics)
-					TweenService:Create(camera, TweenInfo.new(0.18), {FieldOfView = 78}):Play()
-				end
-			elseif inp.KeyCode == keybinds.Dash and not gp then
-				-- dash forward
-				local now = time()
-				if (now - lastDashTime) >= dashCooldown then
-					lastDashTime = now
-					local hrp = getHRP()
-					local dir = camera.CFrame.LookVector
-					-- fov pulse
-					local f1 = TweenService:Create(camera, TweenInfo.new(0.08), {FieldOfView = 86})
-					local f2 = TweenService:Create(camera, TweenInfo.new(0.18), {FieldOfView = 70})
-					f1:Play(); f1.Completed:Connect(function() f2:Play() end)
-					-- trail effect
-					local a0 = Instance.new("Attachment"); a0.Parent = hrp
-					local a1 = Instance.new("Attachment"); a1.Parent = hrp
-					a0.Position = Vector3.new(0,  2, 0); a1.Position = Vector3.new(0, -2, 0)
-					local trail = Instance.new("Trail")
-					trail.Attachment0 = a0; trail.Attachment1 = a1
-					trail.Lifetime = 0.25; trail.MinLength = 0.1; trail.Color = ColorSequence.new(Color3.fromRGB(150,150,255))
-					trail.Transparency = NumberSequence.new(0.2, 1); trail.Enabled=true; trail.Parent = hrp
-					-- physics impulse (no teleport; keeps it legit for testing)
-					hrp.AssemblyLinearVelocity = dir * (dashDistance*4)
-					task.delay(0.3, function() trail.Enabled=false; trail:Destroy(); a0:Destroy(); a1:Destroy() end)
-				end
+		if gp or inp.UserInputType~=Enum.UserInputType.Keyboard then return end
+		if inp.KeyCode == keybinds.Teleport then
+			teleportToMouse()
+		elseif inp.KeyCode == keybinds.Noclip then
+			toggleNoclip()
+		elseif inp.KeyCode == keybinds.Fly then
+			-- proper toggle (no fake Input events)
+			if flyEnabled then
+				flyEnabled=false
+				flyToggleBtn.Text = "Fly: OFF"; flyToggleBtn.BackgroundColor3 = pal.red
+				if flyLV then flyLV:Destroy(); flyLV=nil end
+				if flyAO then flyAO:Destroy(); flyAO=nil end
+				pcall(function() getHumanoid():ChangeState(Enum.HumanoidStateType.Running) end)
+				TweenService:Create(camera, TweenInfo.new(0.18), {FieldOfView = 70}):Play()
+			else
+				flyEnabled=true
+				flyToggleBtn.Text = "Fly: ON"; flyToggleBtn.BackgroundColor3 = Color3.fromRGB(60,130,90)
+				local hrp = getHRP()
+				local att = Instance.new("Attachment"); att.Parent = hrp
+				flyLV = Instance.new("LinearVelocity"); flyLV.Attachment0 = att; flyLV.MaxForce = 1e5; flyLV.RelativeTo = Enum.ActuatorRelativeTo.World; flyLV.Parent = hrp
+				flyAO = Instance.new("AlignOrientation"); flyAO.Attachment0 = att; flyAO.Mode = Enum.OrientationAlignmentMode.OneAttachment; flyAO.Responsiveness = 20; flyAO.Parent = hrp
+				getHumanoid():ChangeState(Enum.HumanoidStateType.Physics)
+				TweenService:Create(camera, TweenInfo.new(0.18), {FieldOfView = 78}):Play()
 			end
+		elseif inp.KeyCode == keybinds.Dash then
+			local now = time(); if (now - lastDashTime) < dashCooldown then return end; lastDashTime = now
+			local hrp = getHRP(); local dir = camera.CFrame.LookVector
+			local f1 = TweenService:Create(camera, TweenInfo.new(0.08), {FieldOfView = 86})
+			local f2 = TweenService:Create(camera, TweenInfo.new(0.18), {FieldOfView = 70})
+			f1:Play(); f1.Completed:Connect(function() f2:Play() end)
+			local a0 = Instance.new("Attachment"); a0.Parent = hrp; a0.Position = Vector3.new(0,  2, 0)
+			local a1 = Instance.new("Attachment"); a1.Parent = hrp; a1.Position = Vector3.new(0, -2, 0)
+			local trail = Instance.new("Trail"); trail.Attachment0=a0; trail.Attachment1=a1; trail.Lifetime=0.25; trail.MinLength=0.1
+			trail.Color=ColorSequence.new(Color3.fromRGB(150,150,255)); trail.Transparency=NumberSequence.new(0.2,1); trail.Enabled=true; trail.Parent=hrp
+			hrp.AssemblyLinearVelocity = dir * (dashDistance*4)
+			task.delay(0.3, function() trail.Enabled=false; trail:Destroy(); a0:Destroy(); a1:Destroy() end)
 		end
 	end)
 
-	-- Fly button (same toggle)
+	-- Fly button toggles directly (no UIS:Fire)
 	flyToggleBtn.MouseButton1Click:Connect(function()
-		UIS.InputBegan:Fire({KeyCode = keybinds.Fly} :: any, false) -- reuse logic
+		if unloaded then return end
+		if flyEnabled then
+			keybinds.Fly = keybinds.Fly -- no-op; just reuse the same toggle logic below by duplicating code:
+			-- turn OFF
+			flyEnabled=false
+			flyToggleBtn.Text = "Fly: OFF"; flyToggleBtn.BackgroundColor3 = pal.red
+			if flyLV then flyLV:Destroy(); flyLV=nil end
+			if flyAO then flyAO:Destroy(); flyAO=nil end
+			pcall(function() getHumanoid():ChangeState(Enum.HumanoidStateType.Running) end)
+			TweenService:Create(camera, TweenInfo.new(0.18), {FieldOfView = 70}):Play()
+		else
+			-- turn ON
+			flyEnabled=true
+			flyToggleBtn.Text = "Fly: ON"; flyToggleBtn.BackgroundColor3 = Color3.fromRGB(60,130,90)
+			local hrp = getHRP()
+			local att = Instance.new("Attachment"); att.Parent = hrp
+			flyLV = Instance.new("LinearVelocity"); flyLV.Attachment0 = att; flyLV.MaxForce = 1e5; flyLV.RelativeTo = Enum.ActuatorRelativeTo.World; flyLV.Parent = hrp
+			flyAO = Instance.new("AlignOrientation"); flyAO.Attachment0 = att; flyAO.Mode = Enum.OrientationAlignmentMode.OneAttachment; flyAO.Responsiveness = 20; flyAO.Parent = hrp
+			getHumanoid():ChangeState(Enum.HumanoidStateType.Physics)
+			TweenService:Create(camera, TweenInfo.new(0.18), {FieldOfView = 78}):Play()
+		end
 	end)
 
-	-- Fly motion update (WASD + Space / LeftControl)
-	RunService.Heartbeat:Connect(function(dt)
+	-- Fly motion update
+	RunService.Heartbeat:Connect(function()
 		if flyEnabled and flyLV and flyAO then
 			local move = Vector3.zero
 			local cf = camera.CFrame
@@ -665,24 +824,20 @@ local function buildUI()
 			if UIS:IsKeyDown(Enum.KeyCode.LeftControl) then move += Vector3.new(0,-1,0) end
 			if move.Magnitude > 0 then move = move.Unit else move = Vector3.zero end
 			flyLV.VectorVelocity = move * flySpeed
-			-- tilt/align to camera yaw (keep roll zero)
 			local _,y,_ = cf:ToOrientation()
-			flyAO.CFrame = CFrame.fromOrientation(0,y,0)
-			-- subtle tilt animation based on input
-			local tilt = 0
-			if UIS:IsKeyDown(Enum.KeyCode.A) then tilt = -math.rad(8) elseif UIS:IsKeyDown(Enum.KeyCode.D) then tilt = math.rad(8) end
-			flyAO.CFrame = flyAO.CFrame * CFrame.Angles(0,0,tilt)
+			local roll=0; if UIS:IsKeyDown(Enum.KeyCode.A) then roll=-math.rad(8) elseif UIS:IsKeyDown(Enum.KeyCode.D) then roll=math.rad(8) end
+			flyAO.CFrame = CFrame.fromOrientation(0,y,0) * CFrame.Angles(0,0,roll)
 		end
 	end)
 
-	-- Teleport button just a label / info
+	-- Teleport button label only
 	teleportBtn.MouseButton1Click:Connect(function() end)
 
 	-- resets
 	resetSpeed.MouseButton1Click:Connect(function() setWalk(SPEED_DEFAULT); applyWalk(SPEED_DEFAULT) end)
 	resetJump.MouseButton1Click:Connect(function()  setJump(JUMP_DEFAULT);   applyJump(JUMP_DEFAULT)  end)
 
-	-- panic in Utility
+	-- panic
 	panicBtn.MouseButton1Click:Connect(function() fullUnload() end)
 
 	-- Discord copy/open
@@ -702,22 +857,27 @@ local function buildUI()
 		end
 	end)
 
-	-- init defaults
-	getHumanoid().WalkSpeed = SPEED_DEFAULT; local h=getHumanoid(); h.UseJumpPower=true; h.JumpPower=JUMP_DEFAULT
+	-- FPS readout
+	do local last=time(); local frames=0
+		RunService.RenderStepped:Connect(function()
+			frames+=1; local now=time(); if now-last>=1 then fpsParagraph.Text = "FPS: "..tostring(frames); frames=0; last=now end
+		end)
+	end
 
-	-- keep features on respawn
+	-- init defaults + respawn persistence
+	getHumanoid().WalkSpeed = SPEED_DEFAULT; local h=getHumanoid(); h.UseJumpPower=true; h.JumpPower=JUMP_DEFAULT
 	player.CharacterAdded:Connect(function()
 		task.defer(function()
 			if flyEnabled then flyEnabled=false end
 			if noclipEnabled then origCanCollide = {}; applyNoclipOnce() end
 			if hitboxAdded then addHitboxesAll() end
-			applyWalk(tonumber(walkVal.Text) or SPEED_DEFAULT)
-			applyJump(tonumber(jumpVal.Text) or JUMP_DEFAULT)
+			applyWalk(tonumber((pageMain:FindFirstChildWhichIsA("TextLabel")).Text) or SPEED_DEFAULT)
+			applyJump(tonumber((pageMain:FindFirstChildWhichIsA("TextLabel")).Text) or JUMP_DEFAULT)
 		end)
 	end)
 end
 
--- after load, fade out loader and show UI
+-- finish loader → show UI
 task.delay(LOAD_SECONDS, function()
 	local fade = TweenService:Create(loader, TweenInfo.new(0.2, Enum.EasingStyle.Quad), {BackgroundTransparency = 1})
 	fade:Play(); fade.Completed:Wait(); loader:Destroy()
