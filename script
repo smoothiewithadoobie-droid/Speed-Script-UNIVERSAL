@@ -1,12 +1,11 @@
 --!strict
--- One-file Utility UI (client): Polished GUI + Speed(8-500) + Jump + Resets + Teleport + Noclip
--- + Rebinds + VC Reconnect + BTools + Dev Portal + Player Boxes (ESP) + Client-side Expand Hitbox
--- Place as a LocalScript in StarterPlayer -> StarterPlayerScripts
+-- Utility UI (clean layout): Speed(8-500) + Jump + Resets + Teleport/Noclip (rebinds)
+-- + Give BTools + Dev Portal + Player Boxes (ESP) + Add/Remove Hitboxes (client)
+-- Place as LocalScript in StarterPlayer -> StarterPlayerScripts
 
 local Players = game:GetService("Players")
 local UIS = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
-local VoiceChatService = game:GetService("VoiceChatService")
 local GuiService = game:GetService("GuiService")
 
 local player = Players.LocalPlayer
@@ -18,18 +17,16 @@ local JUMP_MIN,  JUMP_MAX,  JUMP_DEFAULT = 0, 200, 50
 local keybinds = { Teleport = Enum.KeyCode.F, Noclip = Enum.KeyCode.X }
 
 -- ===== STATE =====
-local listeningFor: string? = nil
 local minimized = false
+local listeningFor: string? = nil
 local noclipEnabled = false
 local keepApplyConn: RBXScriptConnection? = nil
 local origCanCollide: {[Instance]: boolean} = {}
 
--- ESP
+-- ESP + Hitboxes
 local espOn = false
 local highlights: { [Player]: Highlight } = {}
-
--- Client hitbox expansion value (0..100 → 0..3 studs per axis)
-local hbClientValue = 0
+local hitboxAdded = false
 
 -- ===== HELPERS =====
 local function clamp(n:number, a:number, b:number) return (n<a and a) or (n>b and b) or n end
@@ -43,7 +40,7 @@ local function getHRP(): BasePart
     return (c:FindFirstChild("HumanoidRootPart") or c:WaitForChild("HumanoidRootPart")) :: BasePart
 end
 
--- ===== UI ROOT (polished) =====
+-- ===== UI ROOT (simple & roomy) =====
 local gui = Instance.new("ScreenGui")
 gui.Name = "UtilityUI"
 gui.IgnoreGuiInset = true
@@ -51,81 +48,72 @@ gui.ResetOnSpawn = false
 gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 gui.Parent = player:WaitForChild("PlayerGui")
 
-local PANEL_W, PANEL_H = 520, 410
-local TITLE_H = 56
+local PANEL_W, PANEL_H = 520, 400
+local TITLE_H = 44
 
 local panel = Instance.new("Frame")
 panel.Name = "Panel"
 panel.Size = UDim2.fromOffset(PANEL_W, PANEL_H)
 panel.Position = UDim2.fromOffset(40, 100)
-panel.BackgroundColor3 = Color3.fromRGB(18,18,18)
+panel.BackgroundColor3 = Color3.fromRGB(22,22,22)
 panel.BorderSizePixel = 0
 panel.Parent = gui
-Instance.new("UICorner", panel).CornerRadius = UDim.new(0,16)
+Instance.new("UICorner", panel).CornerRadius = UDim.new(0,12)
 
--- shadow
-local shadow = Instance.new("ImageLabel")
-shadow.BackgroundTransparency = 1
-shadow.Image = "rbxassetid://1316045217"
-shadow.ScaleType = Enum.ScaleType.Slice
-shadow.SliceCenter = Rect.new(10,10,118,118)
-shadow.Size = UDim2.new(1, 40, 1, 40)
-shadow.Position = UDim2.fromOffset(-20, -10)
-shadow.ImageTransparency = 0.35
-shadow.ZIndex = 0
-shadow.Parent = panel
-
--- header
+-- title bar
 local header = Instance.new("Frame")
-header.Name = "Header"
 header.Size = UDim2.fromOffset(PANEL_W, TITLE_H)
-header.BackgroundColor3 = Color3.fromRGB(30,30,30)
+header.BackgroundColor3 = Color3.fromRGB(28,28,28)
 header.BorderSizePixel = 0
 header.Parent = panel
-Instance.new("UICorner", header).CornerRadius = UDim.new(0,16)
-local grad = Instance.new("UIGradient", header)
-grad.Color = ColorSequence.new{
-    ColorSequenceKeypoint.new(0, Color3.fromRGB(45,45,65)),
-    ColorSequenceKeypoint.new(.5, Color3.fromRGB(40,40,55)),
-    ColorSequenceKeypoint.new(1, Color3.fromRGB(35,35,45)),
-}
-grad.Rotation = 12
+Instance.new("UICorner", header).CornerRadius = UDim.new(0,12)
 
 local title = Instance.new("TextLabel")
-title.Text = "Utility"
-title.Font = Enum.Font.GothamBlack
-title.TextSize = 22
-title.TextColor3 = Color3.fromRGB(255,255,255)
 title.BackgroundTransparency = 1
+title.Text = "Utility"
+title.Font = Enum.Font.GothamBold
+title.TextSize = 20
+title.TextColor3 = Color3.new(1,1,1)
 title.TextXAlignment = Enum.TextXAlignment.Left
-title.Position = UDim2.fromOffset(18, 12)
-title.Size = UDim2.fromOffset(200, 32)
+title.Position = UDim2.fromOffset(14, 10)
+title.Size = UDim2.fromOffset(200, 24)
 title.Parent = header
 
-local function makeTopBtn(txt, offsetX, bg)
+local function topBtn(txt, offsetX, bg)
     local b = Instance.new("TextButton")
     b.Text = txt
     b.Font = Enum.Font.GothamBold
     b.TextSize = 16
     b.TextColor3 = Color3.fromRGB(255,255,255)
-    b.Size = UDim2.fromOffset(32, 28)
-    b.Position = UDim2.new(1, offsetX, 0, 14)
+    b.Size = UDim2.fromOffset(28, 24)
+    b.Position = UDim2.new(1, offsetX, 0, 10)
     b.BackgroundColor3 = bg
     b.BorderSizePixel = 0
     b.AutoButtonColor = true
     b.Parent = header
-    Instance.new("UICorner", b).CornerRadius = UDim.new(0,8)
+    Instance.new("UICorner", b).CornerRadius = UDim.new(0,6)
     return b
 end
-local minBtn  = makeTopBtn("-", -74, Color3.fromRGB(95,95,105))
-local closeBtn= makeTopBtn("X", -36, Color3.fromRGB(185,60,60))
+local minBtn  = topBtn("-", -68, Color3.fromRGB(90,90,90))
+local closeBtn= topBtn("X", -34, Color3.fromRGB(180,60,60))
 
+-- content container with layout/padding so nothing is cramped
 local content = Instance.new("Frame")
 content.Name = "Content"
 content.Position = UDim2.fromOffset(0, TITLE_H)
 content.Size = UDim2.fromOffset(PANEL_W, PANEL_H - TITLE_H)
 content.BackgroundTransparency = 1
 content.Parent = panel
+
+local pad = Instance.new("UIPadding", content)
+pad.PaddingLeft = UDim.new(0, 16)
+pad.PaddingRight = UDim.new(0, 16)
+pad.PaddingTop = UDim.new(0, 10)
+
+local vlist = Instance.new("UIListLayout", content)
+vlist.FillDirection = Enum.FillDirection.Vertical
+vlist.Padding = UDim.new(0, 12)
+vlist.SortOrder = Enum.SortOrder.LayoutOrder
 
 -- drag via header
 do
@@ -149,100 +137,88 @@ minBtn.MouseButton1Click:Connect(function()
     minimized = not minimized
     if minimized then
         content.Visible = false
-        panel.Size = UDim2.fromOffset(PANEL_W, TITLE_H + 10)
+        panel.Size = UDim2.fromOffset(PANEL_W, TITLE_H + 8)
     else
         panel.Size = UDim2.fromOffset(PANEL_W, PANEL_H)
         content.Visible = true
     end
 end)
 
--- helpers for UI
-local function pillButton(txt, pos, w, color)
-    local b = Instance.new("TextButton")
-    b.Text = txt
-    b.Font = Enum.Font.GothamBold
-    b.TextSize = 14
-    b.TextColor3 = Color3.fromRGB(255,255,255)
-    b.Size = UDim2.fromOffset(w, 32)
-    b.Position = pos
-    b.BackgroundColor3 = color
-    b.BorderSizePixel = 0
-    b.Parent = content
-    Instance.new("UICorner", b).CornerRadius = UDim.new(1,0)
-    return b
+-- small helpers
+local function sectionFrame(height:number?): Frame
+    local f = Instance.new("Frame")
+    f.BackgroundTransparency = 1
+    f.Size = UDim2.new(1, 0, 0, height or 60)
+    f.Parent = content
+    return f
 end
-local function label(text, pos, right)
+local function makeLabel(parent:Instance, txt:string, alignRight:boolean?)
     local l = Instance.new("TextLabel")
     l.BackgroundTransparency = 1
     l.Font = Enum.Font.Gotham
     l.TextSize = 14
     l.TextColor3 = Color3.fromRGB(210,210,210)
-    l.TextXAlignment = right and Enum.TextXAlignment.Right or Enum.TextXAlignment.Left
-    l.Text = text
-    l.Position = pos
-    l.Size = UDim2.fromOffset(160, 18)
-    l.Parent = content
+    l.TextXAlignment = alignRight and Enum.TextXAlignment.Right or Enum.TextXAlignment.Left
+    l.Text = txt
+    l.Parent = parent
     return l
 end
-local function barAt(y)
-    local bar = Instance.new("Frame")
-    bar.Size = UDim2.fromOffset(PANEL_W - 40, 10)
-    bar.Position = UDim2.fromOffset(20, y)
-    bar.BackgroundColor3 = Color3.fromRGB(50,50,55)
-    bar.BorderSizePixel = 0
-    bar.Parent = content
-    Instance.new("UICorner", bar).CornerRadius = UDim.new(0,5)
-    local fill = Instance.new("Frame")
-    fill.AnchorPoint = Vector2.new(0,0.5)
-    fill.Position = UDim2.fromScale(0,0.5)
-    fill.Size = UDim2.fromScale(0,1)
-    fill.BackgroundColor3 = Color3.fromRGB(50,200,120)
-    fill.BorderSizePixel = 0
-    fill.Parent = bar
-    Instance.new("UICorner", fill).CornerRadius = UDim.new(0,5)
-    local knob = Instance.new("ImageButton")
-    knob.AnchorPoint = Vector2.new(0.5,0.5)
-    knob.Size = UDim2.fromOffset(16,16)
-    knob.Position = UDim2.fromScale(0,0.5)
-    knob.BackgroundColor3 = Color3.fromRGB(235,235,235)
-    knob.BorderSizePixel = 0
-    knob.Parent = bar
-    Instance.new("UICorner", knob).CornerRadius = UDim.new(1,0)
-    local s = Instance.new("UIStroke", knob) s.Thickness = 1 s.Transparency = 0.2
-    return bar, fill, knob
-end
-local function alphaFromClick(frame:Frame, xPixel:number)
-    return clamp((xPixel - frame.AbsolutePosition.X) / frame.AbsoluteSize.X, 0, 1)
-end
-local function connectSlider(bar:Frame, fill:Frame, knob:ImageButton, minV:number, maxV:number, defaultV:number, onSet:(number)->())
-    local function toAlpha(v:number) return (v - minV) / (maxV - minV) end
-    local function fromAlpha(a:number) return math.floor(minV + a*(maxV-minV) + 0.5) end
-    local function setAlpha(a:number)
-        a = clamp(a, 0, 1)
-        fill.Size = UDim2.fromScale(a, 1)
-        knob.Position = UDim2.fromScale(a, 0.5)
-        onSet(fromAlpha(a))
-    end
-    setAlpha(toAlpha(defaultV))
-    bar.InputBegan:Connect(function(inp) if inp.UserInputType == Enum.UserInputType.MouseButton1 then setAlpha(alphaFromClick(bar, inp.Position.X)) end end)
-    local dragging=false
-    knob.InputBegan:Connect(function(inp) if inp.UserInputType==Enum.UserInputType.MouseButton1 then dragging=true end end)
-    knob.InputEnded:Connect(function(inp) if inp.UserInputType==Enum.UserInputType.MouseButton1 then dragging=false end end)
-    UIS.InputChanged:Connect(function(inp)
-        if dragging and inp.UserInputType==Enum.UserInputType.MouseMovement then setAlpha(alphaFromClick(bar, inp.Position.X)) end
-    end)
-    return function(v:number) setAlpha(toAlpha(v)) end
+local function makePill(parent:Instance, txt:string, w:number)
+    local b = Instance.new("TextButton")
+    b.Text = txt
+    b.Font = Enum.Font.GothamBold
+    b.TextSize = 14
+    b.TextColor3 = Color3.new(1,1,1)
+    b.Size = UDim2.fromOffset(w, 30)
+    b.BackgroundColor3 = Color3.fromRGB(40,40,40)
+    b.BorderSizePixel = 0
+    b.Parent = parent
+    Instance.new("UICorner", b).CornerRadius = UDim.new(1,0)
+    return b
 end
 
--- ===== Controls =====
+-- ===== Row 0: Noclip pill (top-right inside content) =====
+local row0 = sectionFrame(34)
+local noclipBtn = makePill(row0, "Noclip: OFF", 120)
+noclipBtn.Position = UDim2.new(1, -120, 0, 2)
+noclipBtn.BackgroundColor3 = Color3.fromRGB(85,35,35)
 
--- noclip pill (inside content so it never covers X/-)
-local noclipBtn = pillButton("Noclip: OFF", UDim2.new(1,-140,0,10), 120, Color3.fromRGB(85,35,35))
+-- ===== Row 1: Walk speed + textbox =====
+local row1 = sectionFrame(76)
 
--- Walk speed
-local walkLabel = label("Walk Speed", UDim2.fromOffset(20, 56), false)
-local walkVal   = label(tostring(SPEED_DEFAULT), UDim2.new(1,-24,0,56), true)
-local walkBar, walkFill, walkKnob = barAt(78)
+local walkText = makeLabel(row1, "Walk Speed", false)
+walkText.Position = UDim2.fromOffset(0, 0)
+walkText.Size = UDim2.fromOffset(120, 18)
+
+local walkVal = makeLabel(row1, tostring(SPEED_DEFAULT), true)
+walkVal.Position = UDim2.new(1, -60, 0, 0)
+walkVal.Size = UDim2.fromOffset(60, 18)
+
+local walkBar = Instance.new("Frame")
+walkBar.BackgroundColor3 = Color3.fromRGB(55,55,55)
+walkBar.BorderSizePixel = 0
+walkBar.Position = UDim2.fromOffset(0, 20)
+walkBar.Size = UDim2.new(1, 0, 0, 10)
+walkBar.Parent = row1
+Instance.new("UICorner", walkBar).CornerRadius = UDim.new(0,5)
+
+local walkFill = Instance.new("Frame")
+walkFill.AnchorPoint = Vector2.new(0,0.5)
+walkFill.Position = UDim2.fromScale(0,0.5)
+walkFill.Size = UDim2.fromScale(0,1)
+walkFill.BackgroundColor3 = Color3.fromRGB(60,200,130)
+walkFill.BorderSizePixel = 0
+walkFill.Parent = walkBar
+Instance.new("UICorner", walkFill).CornerRadius = UDim.new(0,5)
+
+local walkKnob = Instance.new("ImageButton")
+walkKnob.AnchorPoint = Vector2.new(0.5,0.5)
+walkKnob.Size = UDim2.fromOffset(16,16)
+walkKnob.Position = UDim2.fromScale(0,0.5)
+walkKnob.BackgroundColor3 = Color3.fromRGB(235,235,235)
+walkKnob.BorderSizePixel = 0
+walkKnob.Parent = walkBar
+Instance.new("UICorner", walkKnob).CornerRadius = UDim.new(1,0)
 
 local speedInput = Instance.new("TextBox")
 speedInput.PlaceholderText = "Type speed (8–500)"
@@ -251,37 +227,134 @@ speedInput.ClearTextOnFocus = false
 speedInput.Font = Enum.Font.Gotham
 speedInput.TextSize = 14
 speedInput.TextColor3 = Color3.fromRGB(255,255,255)
-speedInput.BackgroundColor3 = Color3.fromRGB(36,36,42)
+speedInput.BackgroundColor3 = Color3.fromRGB(36,36,36)
 speedInput.BorderSizePixel = 0
-speedInput.Size = UDim2.fromOffset(PANEL_W - 40, 28)
-speedInput.Position = UDim2.fromOffset(20, 98)
-speedInput.Parent = content
+speedInput.Size = UDim2.new(1, 0, 0, 28)
+speedInput.Position = UDim2.fromOffset(0, 40)
+speedInput.Parent = row1
 Instance.new("UICorner", speedInput).CornerRadius = UDim.new(0,8)
 
--- Jump power
-local jumpLabel = label("Jump Power", UDim2.fromOffset(20, 136), false)
-local jumpVal   = label(tostring(JUMP_DEFAULT), UDim2.new(1,-24,0,136), true)
-local jumpBar, jumpFill, jumpKnob = barAt(158)
+-- ===== Row 2: Jump power =====
+local row2 = sectionFrame(52)
+
+local jumpText = makeLabel(row2, "Jump Power", false)
+jumpText.Position = UDim2.fromOffset(0, 0)
+jumpText.Size = UDim2.fromOffset(120, 18)
+
+local jumpVal = makeLabel(row2, tostring(JUMP_DEFAULT), true)
+jumpVal.Position = UDim2.new(1, -60, 0, 0)
+jumpVal.Size = UDim2.fromOffset(60, 18)
+
+local jumpBar = Instance.new("Frame")
+jumpBar.BackgroundColor3 = Color3.fromRGB(55,55,55)
+jumpBar.BorderSizePixel = 0
+jumpBar.Position = UDim2.fromOffset(0, 20)
+jumpBar.Size = UDim2.new(1, 0, 0, 10)
+jumpBar.Parent = row2
+Instance.new("UICorner", jumpBar).CornerRadius = UDim.new(0,5)
+
+local jumpFill = Instance.new("Frame")
+jumpFill.AnchorPoint = Vector2.new(0,0.5)
+jumpFill.Position = UDim2.fromScale(0,0.5)
+jumpFill.Size = UDim2.fromScale(0,1)
 jumpFill.BackgroundColor3 = Color3.fromRGB(255,170,90)
+jumpFill.BorderSizePixel = 0
+jumpFill.Parent = jumpBar
+Instance.new("UICorner", jumpFill).CornerRadius = UDim.new(0,5)
 
--- row buttons
-local vcBtn      = pillButton("VC Reconnect", UDim2.fromOffset(20, 196), 156, Color3.fromRGB(40,130,255))
-local btoolsBtn  = pillButton("Give BTools",  UDim2.fromOffset(186,196), 156, Color3.fromRGB(120,170,60))
-local portalBtn  = pillButton("Dev Portal",   UDim2.fromOffset(352,196), 156, Color3.fromRGB(90,90,160))
+local jumpKnob = Instance.new("ImageButton")
+jumpKnob.AnchorPoint = Vector2.new(0.5,0.5)
+jumpKnob.Size = UDim2.fromOffset(16,16)
+jumpKnob.Position = UDim2.fromScale(0,0.5)
+jumpKnob.BackgroundColor3 = Color3.fromRGB(235,235,235)
+jumpKnob.BorderSizePixel = 0
+jumpKnob.Parent = jumpBar
+Instance.new("UICorner", jumpKnob).CornerRadius = UDim.new(1,0)
 
-local resetSpeed = pillButton("Reset Speed",  UDim2.fromOffset(20, 236), 156, Color3.fromRGB(135,70,70))
-local resetJump  = pillButton("Reset Jump",   UDim2.fromOffset(186,236), 156, Color3.fromRGB(135,70,70))
-local espBtn     = pillButton("Player Boxes: OFF", UDim2.fromOffset(352,236), 156, Color3.fromRGB(85,85,95))
+-- ===== Row 3: Buttons row (3 wide, comfy) =====
+local row3 = sectionFrame(40)
+local hlist3 = Instance.new("UIListLayout", row3)
+hlist3.FillDirection = Enum.FillDirection.Horizontal
+hlist3.Padding = UDim.new(0, 12)
+hlist3.SortOrder = Enum.SortOrder.LayoutOrder
 
--- client-side Expand Hitbox controls
-local hbLabel = label("Expand Hitbox (client)", UDim2.fromOffset(20, 276), false)
-local hbVal   = label("0", UDim2.new(1,-24,0,276), true)
-local hbBar, hbFill, hbKnob = barAt(298)
-hbFill.BackgroundColor3 = Color3.fromRGB(255,105,105)
-local hbApply = pillButton("Apply", UDim2.fromOffset(20, 320), 156, Color3.fromRGB(180,80,80))
-local hbReset = pillButton("Reset", UDim2.fromOffset(186,320), 156, Color3.fromRGB(95,95,105))
+local btoolsBtn = makePill(row3, "Give BTools", 160)
+btoolsBtn.BackgroundColor3 = Color3.fromRGB(120,170,60)
 
--- ===== Apply functions & hookup =====
+local portalBtn = makePill(row3, "Dev Portal", 160)
+portalBtn.BackgroundColor3 = Color3.fromRGB(90,90,160)
+
+local espBtn = makePill(row3, "Player Boxes: OFF", 160)
+espBtn.BackgroundColor3 = Color3.fromRGB(85,85,95)
+
+-- ===== Row 4: Hitbox row (Add/Remove) =====
+local row4 = sectionFrame(40)
+local hlist4 = Instance.new("UIListLayout", row4)
+hlist4.FillDirection = Enum.FillDirection.Horizontal
+hlist4.Padding = UDim.new(0, 12)
+hlist4.SortOrder = Enum.SortOrder.LayoutOrder
+
+local addHBBtn = makePill(row4, "Add Hitboxes", 160)
+addHBBtn.BackgroundColor3 = Color3.fromRGB(180,80,80)
+local rmHBBtn = makePill(row4, "Remove Hitboxes", 160)
+rmHBBtn.BackgroundColor3 = Color3.fromRGB(95,95,105)
+
+-- ===== Row 5: Reset row =====
+local row5 = sectionFrame(40)
+local hlist5 = Instance.new("UIListLayout", row5)
+hlist5.FillDirection = Enum.FillDirection.Horizontal
+hlist5.Padding = UDim.new(0, 12)
+hlist5.SortOrder = Enum.SortOrder.LayoutOrder
+
+local resetSpeed = makePill(row5, "Reset Speed", 160)
+resetSpeed.BackgroundColor3 = Color3.fromRGB(130,70,70)
+local resetJump = makePill(row5, "Reset Jump", 160)
+resetJump.BackgroundColor3 = Color3.fromRGB(130,70,70)
+
+-- ===== Row 6: Keybinds =====
+local row6 = sectionFrame(40)
+
+local kbTitle = makeLabel(row6, "Keybinds", false)
+kbTitle.Position = UDim2.fromOffset(0, 0); kbTitle.Size = UDim2.fromOffset(100, 18)
+
+local kbRow = Instance.new("Frame")
+kbRow.BackgroundTransparency = 1
+kbRow.Size = UDim2.new(1, 0, 0, 30)
+kbRow.Position = UDim2.fromOffset(0, 12)
+kbRow.Parent = row6
+local hlist6 = Instance.new("UIListLayout", kbRow)
+hlist6.FillDirection = Enum.FillDirection.Horizontal
+hlist6.Padding = UDim.new(0, 20)
+hlist6.SortOrder = Enum.SortOrder.LayoutOrder
+
+local tpLbl = makeLabel(kbRow, "Teleport", false)
+tpLbl.Size = UDim2.fromOffset(70, 30)
+local tpBindBtn = makePill(kbRow, keybinds.Teleport.Name, 70)
+
+local ncLbl = makeLabel(kbRow, "Noclip", false)
+ncLbl.Size = UDim2.fromOffset(70, 30)
+local ncBindBtn = makePill(kbRow, keybinds.Noclip.Name, 70)
+
+-- ===== Slider plumbing =====
+local function alphaFromClick(frame:Frame, xPixel:number)
+    return clamp((xPixel - frame.AbsolutePosition.X) / frame.AbsoluteSize.X, 0, 1)
+end
+local function connectSlider(bar:Frame, fill:Frame, knob:ImageButton, minV:number, maxV:number, defaultV:number, onSet:(number)->())
+    local function toAlpha(v:number) return (v - minV) / (maxV - minV) end
+    local function fromAlpha(a:number) return math.floor(minV + a*(maxV-minV) + 0.5) end
+    local function setAlpha(a:number)
+        a = clamp(a, 0, 1); fill.Size = UDim2.fromScale(a,1); knob.Position = UDim2.fromScale(a,0.5); onSet(fromAlpha(a))
+    end
+    setAlpha(toAlpha(defaultV))
+    bar.InputBegan:Connect(function(inp) if inp.UserInputType==Enum.UserInputType.MouseButton1 then setAlpha(alphaFromClick(bar, inp.Position.X)) end end)
+    local dragging=false
+    knob.InputBegan:Connect(function(inp) if inp.UserInputType==Enum.UserInputType.MouseButton1 then dragging=true end end)
+    knob.InputEnded:Connect(function(inp) if inp.UserInputType==Enum.UserInputType.MouseButton1 then dragging=false end end)
+    UIS.InputChanged:Connect(function(inp) if dragging and inp.UserInputType==Enum.UserInputType.MouseMovement then setAlpha(alphaFromClick(bar, inp.Position.X)) end end)
+    return function(v:number) setAlpha(toAlpha(v)) end
+end
+
+-- Apply funcs
 local function applyWalk(v:number) walkVal.Text = tostring(v); getHumanoid().WalkSpeed = v end
 local function applyJump(v:number) jumpVal.Text = tostring(v); local h=getHumanoid(); h.UseJumpPower=true; h.JumpPower=v end
 
@@ -339,28 +412,22 @@ end
 local function toggleNoclip() if noclipEnabled then stopNoclip() else startNoclip() end end
 noclipBtn.MouseButton1Click:Connect(toggleNoclip)
 
--- Keybind rebinds
-local function refreshBinds() end -- simple visual handled below
+-- ===== Keybinds =====
 local listening: string? = nil
-local function bindRow(labelText, y)
-    local lbl = label(labelText, UDim2.fromOffset(352, y), false)
-    local btn = pillButton(keybinds[labelText].Name, UDim2.fromOffset(430, y-6), 78, Color3.fromRGB(36,36,42))
-    btn.MouseButton1Click:Connect(function()
-        if listening then return end
-        listening = labelText
-        btn.Text = "Press…"
-        btn.BackgroundColor3 = Color3.fromRGB(70,70,30)
-    end)
-    return btn
+local function beginListen(actionName:string, btn:TextButton)
+    if listening then return end
+    listening = actionName
+    btn.Text = "Press..."
+    btn.BackgroundColor3 = Color3.fromRGB(70,70,30)
 end
-local tpBindBtn = bindRow("Teleport", 298)
-local ncBindBtn = bindRow("Noclip",   326)
+tpBindBtn.MouseButton1Click:Connect(function() beginListen("Teleport", tpBindBtn) end)
+ncBindBtn.MouseButton1Click:Connect(function() beginListen("Noclip",   ncBindBtn) end)
 
 local function refreshBindButtons()
     tpBindBtn.Text = keybinds.Teleport.Name
     ncBindBtn.Text = keybinds.Noclip.Name
-    tpBindBtn.BackgroundColor3 = Color3.fromRGB(36,36,42)
-    ncBindBtn.BackgroundColor3 = Color3.fromRGB(36,36,42)
+    tpBindBtn.BackgroundColor3 = Color3.fromRGB(40,40,40)
+    ncBindBtn.BackgroundColor3 = Color3.fromRGB(40,40,40)
 end
 refreshBindButtons()
 
@@ -388,33 +455,18 @@ UIS.InputBegan:Connect(function(inp, gp)
     end
 end)
 
--- ===== VC Reconnect =====
-vcBtn.MouseButton1Click:Connect(function()
-    vcBtn.Text = "VC: Checking…"
-    task.spawn(function()
-        local ok1, enabled = pcall(function() return VoiceChatService:IsVoiceChatEnabledForUserAsync(player.UserId) end)
-        if not ok1 or not enabled then vcBtn.Text="VC disabled/banned"; vcBtn.BackgroundColor3=Color3.fromRGB(100,60,60); return end
-        local ok2, perm = pcall(function() return VoiceChatService:RequestMicrophonePermissionAsync() end)
-        if not ok2 or not perm then vcBtn.Text="Mic permission denied"; vcBtn.BackgroundColor3=Color3.fromRGB(100,60,60); return end
-        vcBtn.Text="VC reconnected"; vcBtn.BackgroundColor3=Color3.fromRGB(40,130,255)
-    end)
-end)
-
 -- ===== BTools =====
 local btoolsGiven=false
 local function mkTool(name:string) local t=Instance.new("Tool"); t.RequiresHandle=false; t.Name=name; t.CanBeDropped=false; return t end
 btoolsBtn.MouseButton1Click:Connect(function()
     if btoolsGiven then return end; btoolsGiven=true
     local bp = player:WaitForChild("Backpack")
-    -- DELETE
     local del = mkTool("BT_Delete")
     del.Activated:Connect(function() local t=mouse.Target if t and not t:IsDescendantOf(player.Character) then t:Destroy() end end)
     del.Parent=bp
-    -- CLONE
     local cln = mkTool("BT_Clone")
     cln.Activated:Connect(function() local t=mouse.Target if t and t:IsA("BasePart") and not t:IsDescendantOf(player.Character) then local c=t:Clone(); c.CFrame=t.CFrame*CFrame.new(0,3,0); c.Parent=t.Parent end end)
     cln.Parent=bp
-    -- MOVE
     local mv = mkTool("BT_Move"); local conn; local picked:BasePart?
     mv.Activated:Connect(function()
         local t=mouse.Target
@@ -438,7 +490,7 @@ end)
 resetSpeed.MouseButton1Click:Connect(function() syncWalk(SPEED_DEFAULT); applyWalk(SPEED_DEFAULT) end)
 resetJump.MouseButton1Click:Connect(function()  syncJump(JUMP_DEFAULT);  applyJump(JUMP_DEFAULT)  end)
 
--- ===== ESP (client) =====
+-- ===== ESP (Player Boxes) =====
 local function ensureHighlight(plr: Player)
     if plr == player then return end
     if not plr.Character then return end
@@ -447,7 +499,7 @@ local function ensureHighlight(plr: Player)
         h = Instance.new("Highlight")
         h.FillTransparency = 1
         h.OutlineTransparency = 0
-        h.OutlineColor = Color3.fromRGB(255, 120, 120)
+        h.OutlineColor = Color3.fromRGB(255,120,120)
         h.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
         h.Parent = plr.Character
         highlights[plr] = h
@@ -476,12 +528,11 @@ local function espDisable()
 end
 espBtn.MouseButton1Click:Connect(function() if espOn then espDisable() else espEnable() end end)
 
--- ===== Client-side Expand Hitbox =====
--- Adds/updates a local Part named "Hitbox" in each character, welded to HRP, resized per slider
-local function getOrCreateLocalHitbox(char: Model): BasePart
+-- ===== Hitboxes (client): add/remove welded parts to all players =====
+local function getOrCreateHitbox(char: Model): BasePart?
     local hb = char:FindFirstChild("Hitbox")
     local hrp = char:FindFirstChild("HumanoidRootPart")
-    if not hrp or not hrp:IsA("BasePart") then return nil :: any end
+    if not hrp or not hrp:IsA("BasePart") then return nil end
     if not (hb and hb:IsA("BasePart")) then
         hb = Instance.new("Part")
         hb.Name = "Hitbox"
@@ -490,39 +541,25 @@ local function getOrCreateLocalHitbox(char: Model): BasePart
         hb.CanQuery = true
         hb.CanTouch = true
         hb.Transparency = 1
+        hb.Size = hrp.Size
         hb.Massless = true
         hb.Parent = char
-        local wc = Instance.new("WeldConstraint")
-        wc.Part0 = hrp
-        wc.Part1 = hb
-        wc.Parent = hb
+        local weld = Instance.new("WeldConstraint")
+        weld.Part0 = hrp
+        weld.Part1 = hb
+        weld.Parent = hb
     end
     return hb
 end
 
-local function mapSliderToStuds(v:number): number
-    -- 0..100 -> 0..3 studs expansion
-    return clamp(v,0,100) * 0.03
-end
-
-local function updateAllClientHitboxes()
-    local studs = mapSliderToStuds(hbClientValue)
+local function addHitboxesAll()
     for _, plr in ipairs(Players:GetPlayers()) do
         local char = plr.Character
-        if char then
-            local hrp = char:FindFirstChild("HumanoidRootPart")
-            if hrp and hrp:IsA("BasePart") then
-                local hb = getOrCreateLocalHitbox(char)
-                if hb then
-                    local base = hrp.Size
-                    hb.Size = Vector3.new(math.max(2, base.X + studs), math.max(2, base.Y + studs), math.max(1, base.Z + studs))
-                end
-            end
-        end
+        if char then getOrCreateHitbox(char) end
+        plr.CharacterAdded:Connect(function(newChar) if hitboxAdded then task.defer(function() getOrCreateHitbox(newChar) end) end end)
     end
 end
-
-local function removeAllClientHitboxes()
+local function removeHitboxesAll()
     for _, plr in ipairs(Players:GetPlayers()) do
         local char = plr.Character
         if char then
@@ -532,19 +569,19 @@ local function removeAllClientHitboxes()
     end
 end
 
-local function applyHBClient(v:number) hbClientValue = v; hbVal.Text = tostring(v) end
-local syncHB = connectSlider(hbBar, hbFill, hbKnob, 0, 100, 0, applyHBClient)
-
-hbApply.MouseButton1Click:Connect(function() updateAllClientHitboxes() end)
-hbReset.MouseButton1Click:Connect(function() hbClientValue = 0; hbVal.Text = "0"; syncHB(0); removeAllClientHitboxes() end)
-
--- Keep client hitboxes in sync for new spawns
-Players.PlayerAdded:Connect(function(plr)
-    plr.CharacterAdded:Connect(function() if hbClientValue > 0 then task.defer(updateAllClientHitboxes) end end)
+addHBBtn.MouseButton1Click:Connect(function()
+    hitboxAdded = true
+    addHitboxesAll()
+    addHBBtn.Text = "Hitboxes Added"
+    addHBBtn.BackgroundColor3 = Color3.fromRGB(40,110,70)
+    task.delay(1.2, function() if addHBBtn then addHBBtn.Text="Add Hitboxes" end end)
 end)
-for _, plr in ipairs(Players:GetPlayers()) do
-    plr.CharacterAdded:Connect(function() if hbClientValue > 0 then task.defer(updateAllClientHitboxes) end end)
-end
+rmHBBtn.MouseButton1Click:Connect(function()
+    hitboxAdded = false
+    removeHitboxesAll()
+    rmHBBtn.Text = "Hitboxes Removed"
+    task.delay(1.2, function() if rmHBBtn then rmHBBtn.Text="Remove Hitboxes" end end)
+end)
 
 -- ===== INIT / RESPAWN =====
 task.defer(function()
@@ -557,10 +594,9 @@ player.CharacterAdded:Connect(function()
         applyWalk(tonumber(walkVal.Text) or SPEED_DEFAULT)
         applyJump(tonumber(jumpVal.Text) or JUMP_DEFAULT)
         if noclipEnabled then
-            -- reapply noclip on new character
             origCanCollide = {}
             applyNoclipOnce()
         end
-        if hbClientValue > 0 then updateAllClientHitboxes() end
+        if hitboxAdded then addHitboxesAll() end
     end)
 end)
