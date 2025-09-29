@@ -1,11 +1,10 @@
 --!strict
--- Utility GUI: Speed(8-500) + Speed Input + Teleport + Noclip + BTools + VC Reconnect + Rebinds
+-- Utility GUI: Speed(8-500) + Speed Input + Teleport + Noclip + BTools + VC Reconnect + Rebinds + Minimize/Close
 -- LocalScript in StarterPlayer > StarterPlayerScripts
 
 local Players = game:GetService("Players")
 local UIS = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
-local ContextActionService = game:GetService("ContextActionService")
 local VoiceChatService = game:GetService("VoiceChatService")
 
 local player = Players.LocalPlayer
@@ -23,6 +22,7 @@ local listeningFor: string? = nil
 local noclipEnabled = false
 local keepApplyConn: RBXScriptConnection? = nil
 local origCanCollide: {[Instance]: boolean} = {}
+local minimized = false
 
 -- ========= HELPERS =========
 local function clamp(n:number, a:number, b:number)
@@ -38,7 +38,7 @@ local function getHumanoid()
 end
 local function getHRP()
     local c = getCharacter()
-    return c:FindChild("HumanoidRootPart") or c:WaitForChild("HumanoidRootPart")
+    return c:FindFirstChild("HumanoidRootPart") or c:WaitForChild("HumanoidRootPart")
 end
 
 -- ========= UI ROOT =========
@@ -60,15 +60,15 @@ panel.Parent = gui
 Instance.new("UICorner", panel).CornerRadius = UDim.new(0,12)
 local pStroke = Instance.new("UIStroke", panel) pStroke.Thickness = 1.5 pStroke.Transparency = 0.3
 
+local originalSize = panel.Size
+
 -- Drag panel
 do
     local dragging=false; local dragStart; local startPos
     panel.InputBegan:Connect(function(inp)
         if inp.UserInputType==Enum.UserInputType.MouseButton1 then
             dragging=true; dragStart=inp.Position; startPos=panel.Position
-            inp.Changed:Connect(function()
-                if inp.UserInputState==Enum.UserInputState.End then dragging=false end
-            end)
+            inp.Changed:Connect(function() if inp.UserInputState==Enum.UserInputState.End then dragging=false end end)
         end
     end)
     UIS.InputChanged:Connect(function(inp)
@@ -79,6 +79,7 @@ do
     end)
 end
 
+-- === Title ===
 local title = Instance.new("TextLabel")
 title.BackgroundTransparency = 1
 title.Text = "Utility"
@@ -89,6 +90,55 @@ title.TextXAlignment = Enum.TextXAlignment.Left
 title.Position = UDim2.fromOffset(14,10)
 title.Size = UDim2.fromOffset(160,24)
 title.Parent = panel
+
+-- === Close (X) button ===
+local closeBtn = Instance.new("TextButton")
+closeBtn.Text = "X"
+closeBtn.Font = Enum.Font.GothamBold
+closeBtn.TextSize = 14
+closeBtn.TextColor3 = Color3.fromRGB(255,255,255)
+closeBtn.Size = UDim2.fromOffset(28, 24)
+closeBtn.Position = UDim2.new(1, -34, 0, 6)
+closeBtn.BackgroundColor3 = Color3.fromRGB(180, 50, 50)
+closeBtn.BorderSizePixel = 0
+closeBtn.Parent = panel
+Instance.new("UICorner", closeBtn).CornerRadius = UDim.new(0,6)
+
+-- === Minimize button ===
+local minBtn = Instance.new("TextButton")
+minBtn.Text = "-"
+minBtn.Font = Enum.Font.GothamBold
+minBtn.TextSize = 16
+minBtn.TextColor3 = Color3.fromRGB(255,255,255)
+minBtn.Size = UDim2.fromOffset(28, 24)
+minBtn.Position = UDim2.new(1, -68, 0, 6)
+minBtn.BackgroundColor3 = Color3.fromRGB(80, 80, 80)
+minBtn.BorderSizePixel = 0
+minBtn.Parent = panel
+Instance.new("UICorner", minBtn).CornerRadius = UDim.new(0,6)
+
+-- === Close / Minimize logic ===
+closeBtn.MouseButton1Click:Connect(function()
+    gui:Destroy()
+end)
+minBtn.MouseButton1Click:Connect(function()
+    minimized = not minimized
+    if minimized then
+        panel.Size = UDim2.fromOffset(originalSize.X.Offset, 40)
+        for _, child in ipairs(panel:GetChildren()) do
+            if child ~= title and child ~= minBtn and child ~= closeBtn and not child:IsA("UICorner") and not child:IsA("UIStroke") then
+                child.Visible = false
+            end
+        end
+    else
+        panel.Size = originalSize
+        for _, child in ipairs(panel:GetChildren()) do
+            if child ~= title and child ~= minBtn and child ~= closeBtn then
+                child.Visible = true
+            end
+        end
+    end
+end)
 
 -- ========= WALK SPEED (slider + input) =========
 local walkLabel = Instance.new("TextLabel")
@@ -261,24 +311,24 @@ local function connectSlider(bar:Frame, fill:Frame, knob:ImageButton, minV:numbe
             setAlpha(alphaFromClick(bar, inp.Position.X))
         end
     end)
+    return function(v:number) -- external setter to sync UI
+        local a = toAlpha(v)
+        setAlpha(a)
+    end
 end
 
-connectSlider(walkBar, walkFill, walkKnob, SPEED_MIN, SPEED_MAX, SPEED_DEFAULT, function(val)
+local syncWalkUI = connectSlider(walkBar, walkFill, walkKnob, SPEED_MIN, SPEED_MAX, SPEED_DEFAULT, function(val)
     walkNumLabel.Text = tostring(val)
     local hum = getHumanoid()
     if hum then hum.WalkSpeed = val end
 end)
 
 -- Apply typed speed
-speedInput.FocusLost:Connect(function(enter)
+speedInput.FocusLost:Connect(function()
     local n = tonumber(speedInput.Text)
     if n then
         n = clamp(math.floor(n + 0.5), SPEED_MIN, SPEED_MAX)
-        -- update slider UI to match typed value
-        local a = (n - SPEED_MIN) / (SPEED_MAX - SPEED_MIN)
-        walkFill.Size = UDim2.fromScale(a, 1)
-        walkKnob.Position = UDim2.fromScale(a, 0.5)
-        walkNumLabel.Text = tostring(n)
+        syncWalkUI(n)
         local hum = getHumanoid()
         if hum then hum.WalkSpeed = n end
     end
@@ -421,7 +471,6 @@ vcButton.MouseButton1Click:Connect(vcReconnect)
 
 -- ========= BTOOLS (Delete / Clone / Move) =========
 local btoolsGiven = false
-
 local function mkTool(name:string)
     local t = Instance.new("Tool")
     t.RequiresHandle = false
@@ -458,7 +507,7 @@ local function giveBTools()
     end)
     cloneTool.Parent = backpack
 
-    -- MOVE tool (drag to mouse)
+    -- MOVE tool (drag toward mouse)
     local moveTool = mkTool("BT_Move")
     local movingConn: RBXScriptConnection? = nil
     local picked: BasePart? = nil
@@ -467,32 +516,24 @@ local function giveBTools()
         picked = mouse.Target
         if picked and picked:IsA("BasePart") and not picked:IsDescendantOf(player.Character) then
             picked.Anchored = false
-            -- Give network ownership for smoother client move (best effort)
             local hrp = getHRP()
-            if picked.SetNetworkOwner and hrp then
-                pcall(function() picked:SetNetworkOwner(player) end)
-            end
+            if picked.SetNetworkOwner and hrp then pcall(function() picked:SetNetworkOwner(player) end) end
             movingConn = RunService.RenderStepped:Connect(function()
                 if not picked then return end
                 local cf = mouse.Hit
-                if cf then
-                    picked.CFrame = CFrame.new(cf.X, cf.Y, cf.Z)
-                end
+                if cf then picked.CFrame = CFrame.new(cf.X, cf.Y, cf.Z) end
             end)
         end
     end)
-
     moveTool.Deactivated:Connect(function()
         if movingConn then movingConn:Disconnect() movingConn=nil end
         picked = nil
     end)
-
     moveTool.Parent = backpack
 end
-
 btoolsButton.MouseButton1Click:Connect(giveBTools)
 
--- ========= INIT =========
+-- ========= INIT / RESPAWN =========
 task.defer(function()
     local hum = getHumanoid()
     if hum then hum.WalkSpeed = SPEED_DEFAULT end
@@ -501,84 +542,9 @@ end)
 player.CharacterAdded:Connect(function()
     task.defer(function()
         local hum = getHumanoid()
-        if hum then hum.WalkSpeed = tonumber(walkNumLabel.Text) or SPEED_DEFAULT end
+        if hum then
+            hum.WalkSpeed = tonumber(walkNumLabel.Text) or SPEED_DEFAULT
+        end
         if noclipEnabled then applyNoclipOnce() end
     end)
-end)
--- Add to the top of your script where the panel is created
-local panel = Instance.new("Frame")
-panel.Name = "Panel"
-panel.Size = UDim2.fromOffset(360, 255)
-panel.Position = UDim2.fromOffset(40, 120)
-panel.BackgroundColor3 = Color3.fromRGB(24,24,24)
-panel.BackgroundTransparency = 0.1
-panel.BorderSizePixel = 0
-panel.Parent = gui
-Instance.new("UICorner", panel).CornerRadius = UDim.new(0,12)
-
--- === Title Label ===
-local title = Instance.new("TextLabel")
-title.BackgroundTransparency = 1
-title.Text = "Utility"
-title.Font = Enum.Font.GothamBold
-title.TextSize = 18
-title.TextColor3 = Color3.new(1,1,1)
-title.TextXAlignment = Enum.TextXAlignment.Left
-title.Position = UDim2.fromOffset(14,10)
-title.Size = UDim2.fromOffset(160,24)
-title.Parent = panel
-
--- === Close (X) button ===
-local closeBtn = Instance.new("TextButton")
-closeBtn.Text = "X"
-closeBtn.Font = Enum.Font.GothamBold
-closeBtn.TextSize = 14
-closeBtn.TextColor3 = Color3.fromRGB(255,255,255)
-closeBtn.Size = UDim2.fromOffset(28, 24)
-closeBtn.Position = UDim2.new(1, -34, 0, 6)
-closeBtn.BackgroundColor3 = Color3.fromRGB(180, 50, 50)
-closeBtn.BorderSizePixel = 0
-closeBtn.Parent = panel
-Instance.new("UICorner", closeBtn).CornerRadius = UDim.new(0,6)
-
--- === Minimize button ===
-local minBtn = Instance.new("TextButton")
-minBtn.Text = "-"
-minBtn.Font = Enum.Font.GothamBold
-minBtn.TextSize = 16
-minBtn.TextColor3 = Color3.fromRGB(255,255,255)
-minBtn.Size = UDim2.fromOffset(28, 24)
-minBtn.Position = UDim2.new(1, -68, 0, 6)
-minBtn.BackgroundColor3 = Color3.fromRGB(80, 80, 80)
-minBtn.BorderSizePixel = 0
-minBtn.Parent = panel
-Instance.new("UICorner", minBtn).CornerRadius = UDim.new(0,6)
-
--- === Logic for close / minimize ===
-local minimized = false
-local originalSize = panel.Size
-
-closeBtn.MouseButton1Click:Connect(function()
-    gui:Destroy()
-end)
-
-minBtn.MouseButton1Click:Connect(function()
-    minimized = not minimized
-    if minimized then
-        -- shrink to title bar only
-        panel.Size = UDim2.fromOffset(originalSize.X.Offset, 40)
-        for _, child in ipairs(panel:GetChildren()) do
-            if child ~= title and child ~= minBtn and child ~= closeBtn and not child:IsA("UICorner") and not child:IsA("UIStroke") then
-                child.Visible = false
-            end
-        end
-    else
-        -- restore
-        panel.Size = originalSize
-        for _, child in ipairs(panel:GetChildren()) do
-            if child ~= title and child ~= minBtn and child ~= closeBtn then
-                child.Visible = true
-            end
-        end
-    end
 end)
