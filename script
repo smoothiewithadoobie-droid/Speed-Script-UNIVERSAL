@@ -291,6 +291,7 @@ local function buildUI()
         local btnUtility  = sideBtn("Utility")
         local btnCurrency = sideBtn("Currency")
         local btnVehicles = sideBtn("Vehicles")
+        local btnAdmin    = sideBtn("Admin")
         local btnCredits  = sideBtn("Credits")
 
         -- pages container
@@ -301,7 +302,7 @@ local function buildUI()
         pages.Parent = body
 
         local function makePage() local f=Instance.new("Frame"); f.BackgroundTransparency=1; f.Size=UDim2.fromScale(1,1); f.Visible=false; f.Parent=pages; return f end
-        pageMain = makePage(); pageNametags = makePage(); pageMovement = makePage(); pageUtility = makePage(); pageCurrency = makePage(); pageVehicles = makePage(); pageCredits = makePage()
+        pageMain = makePage(); pageNametags = makePage(); pageMovement = makePage(); pageUtility = makePage(); pageCurrency = makePage(); pageVehicles = makePage(); pageAdmin = makePage(); pageCredits = makePage()
 
         local function showPage(which: Frame)
                 for _,c in ipairs(pages:GetChildren()) do if c:IsA("Frame") then c.Visible = (c==which) end end
@@ -314,6 +315,7 @@ local function buildUI()
         btnUtility.MouseButton1Click:Connect(function() showPage(pageUtility) end)
         btnCurrency.MouseButton1Click:Connect(function() showPage(pageCurrency) end)
         btnVehicles.MouseButton1Click:Connect(function() showPage(pageVehicles) end)
+        btnAdmin.MouseButton1Click:Connect(function() showPage(pageAdmin) end)
         btnCredits.MouseButton1Click:Connect(function() showPage(pageCredits) end)
 
         -- resize grip
@@ -792,106 +794,65 @@ local function buildUI()
         local discordBtn = makePill(pageCredits, "Copy Invite / Open Discord", UDim2.fromOffset(14, 96), UDim2.fromOffset(320, 36), pal.accent)
 
         ------------------------------------------------------------
-        -- PAGE: CURRENCY (auto-scan across games)
+        -- PAGE: CURRENCY (Remote selection and server-sided attempts)
         ------------------------------------------------------------
-        label(pageCurrency, "Currency", 22, true, 14, 12)
-        local statusC = label(pageCurrency, "", 14, false, 14, 46, Color3.fromRGB(210,210,220))
-        local function setCStatus(msg:string, ok:boolean?) statusC.Text=msg; statusC.TextColor3 = ok and Color3.fromRGB(110,190,120) or Color3.fromRGB(230,170,120) end
+        label(pageCurrency, "Server Remote Manager", 22, true, 14, 12)
+        local remoteStatus = label(pageCurrency, "No remote selected.", 14, false, 14, 46, Color3.fromRGB(200, 200, 200))
+        
+        local scanBtn = makePill(pageCurrency, "Scan for Remotes", UDim2.fromOffset(14, 76), UDim2.fromOffset(160, 30), pal.accent)
+        local remoteScroll = Instance.new("ScrollingFrame")
+        remoteScroll.Size = UDim2.new(1, -28, 0, 200); remoteScroll.Position = UDim2.fromOffset(14, 116)
+        remoteScroll.BackgroundTransparency = 0.9; remoteScroll.BackgroundColor3 = Color3.new(0,0,0)
+        remoteScroll.BorderSizePixel = 0; remoteScroll.CanvasSize = UDim2.new(0,0,0,0); remoteScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+        remoteScroll.ScrollBarThickness = 4; remoteScroll.Parent = pageCurrency
+        local remoteList = Instance.new("UIListLayout", remoteScroll); remoteList.Padding = UDim.new(0, 4)
 
-        local scanBtnC = makePill(pageCurrency, "Scan currencies", UDim2.fromOffset(14, 76), UDim2.fromOffset(160, 30), pal.accent)
-        local listFrameC = Instance.new("Frame"); listFrameC.BackgroundTransparency=1
-        listFrameC.Size = UDim2.fromOffset(420, 260); listFrameC.Position = UDim2.fromOffset(14, 116); listFrameC.Parent = pageCurrency
-        local listLayoutC = Instance.new("UIListLayout", listFrameC); listLayoutC.Padding = UDim.new(0,6)
+        local foundRemotes = {}
+        local function refreshRemoteList()
+            for _,c in ipairs(remoteScroll:GetChildren()) do if not c:IsA("UIListLayout") then c:Destroy() end end
+            for i, r in ipairs(foundRemotes) do
+                local rb = sideBtn(r.Name .. " (" .. r.ClassName .. ")")
+                rb.Size = UDim2.new(1, -8, 0, 32); rb.TextSize = 14; rb.Parent = remoteScroll
+                rb.MouseButton1Click:Connect(function()
+                    CurrencyRF = r
+                    remoteStatus.Text = "Selected: " .. r.Name .. " (" .. r.ClassName .. ")"
+                    remoteStatus.TextColor3 = pal.green
+                end)
+            end
+        end
 
-        local function rebuildCurrencyList()
-                for _,c in ipairs(listFrameC:GetChildren()) do if not c:IsA("UIListLayout") then c:Destroy() end end
-                selectedCurrency = nil
-                for _,entry in ipairs(scannedList) do
-                        local b = makePill(listFrameC, entry.Name.."  ·  "..entry.Type, UDim2.fromOffset(0,0), UDim2.fromOffset(400, 28), pal.buttonDark)
-                        b.MouseButton1Click:Connect(function() selectedCurrency=entry.Name; setCStatus("Selected: "..selectedCurrency, true) end)
+        scanBtn.MouseButton1Click:Connect(function()
+            foundRemotes = {}
+            for _, v in ipairs(game:GetDescendants()) do
+                if v:IsA("RemoteFunction") or v:IsA("RemoteEvent") then
+                    table.insert(foundRemotes, v)
                 end
-                if #scannedList==0 then label(listFrameC, "No numeric leaderstats found.", 14, false, 0, 0) end
-        end
-        local function isNumericValue(obj: Instance): boolean
-                return obj:IsA("IntValue") or obj:IsA("NumberValue") or obj:IsA("DoubleConstrainedValue") or obj:IsA("IntConstrainedValue")
-        end
-        local function clientScan()
-                local ls = player:FindFirstChild("leaderstats")
-                local list: {{Name:string, Type:string}} = {}
-                if ls then
-                        for _,ch in ipairs(ls:GetChildren()) do if isNumericValue(ch) then table.insert(list, {Name=ch.Name, Type=ch.ClassName}) end end
-                end
-                scannedList = list; rebuildCurrencyList()
-        end
-        local function serverScan()
-                CurrencyRF = CurrencyRF or findCurrencyRF()
-                if not CurrencyRF then setCStatus("Server hook missing; scanning client leaderstats.", false); clientScan(); return end
-                local ok, res = pcall(function() return CurrencyRF:InvokeServer("Scan") end)
-                if ok and res and res[1]==true then scannedList=res[2] or {}; rebuildCurrencyList(); setCStatus("Scan complete.", true)
-                else setCStatus("Server scan failed; using client scan.", false); clientScan() end
-        end
-        scanBtnC.MouseButton1Click:Connect(serverScan)
-        clientScan()
+            end
+            refreshRemoteList()
+            scanBtn.Text = "Found " .. #foundRemotes .. " remotes"
+        end)
 
-        label(pageCurrency, "Adjust amount (selected currency):", 14, true, 460, 116)
+        label(pageCurrency, "Amount / Payload:", 14, true, 14, 330)
         local amtBox = Instance.new("TextBox")
-        amtBox.PlaceholderText="Amount (number)"; amtBox.Font=Enum.Font.Gotham; amtBox.TextSize=14; amtBox.TextColor3=Color3.fromRGB(255,255,255)
-        amtBox.BackgroundColor3=Color3.fromRGB(36,36,42); amtBox.BorderSizePixel=0; amtBox.Size=UDim2.fromOffset(220,28)
-        amtBox.Position=UDim2.fromOffset(460, 140); amtBox.Parent=pageCurrency
+        amtBox.PlaceholderText="Enter value (number or string)"; amtBox.Font=Enum.Font.Gotham; amtBox.TextSize=14; amtBox.TextColor3=Color3.fromRGB(255,255,255)
+        amtBox.BackgroundColor3=Color3.fromRGB(36,36,42); amtBox.BorderSizePixel=0; amtBox.Size=UDim2.fromOffset(workW - 40, 28)
+        amtBox.Position=UDim2.fromOffset(14, 354); amtBox.Parent=pageCurrency
         Instance.new("UICorner", amtBox).CornerRadius = UDim.new(0,8)
-        local addBtn = makePill(pageCurrency, "Add", UDim2.fromOffset(690, 140), UDim2.fromOffset(100, 28), pal.green)
-        local setBtn = makePill(pageCurrency, "Set", UDim2.fromOffset(800, 140), UDim2.fromOffset(100, 28), pal.orange)
 
-        label(pageCurrency, "Rename selected currency:", 14, true, 460, 184)
-        local renameBox = Instance.new("TextBox")
-        renameBox.PlaceholderText="New name (1–32)"; renameBox.Font=Enum.Font.Gotham; renameBox.TextSize=14; renameBox.TextColor3=Color3.fromRGB(255,255,255)
-        renameBox.BackgroundColor3=Color3.fromRGB(36,36,42); renameBox.BorderSizePixel=0
-        renameBox.Size=UDim2.fromOffset(320,28); renameBox.Position=UDim2.fromOffset(460, 208); renameBox.Parent=pageCurrency
-        Instance.new("UICorner", renameBox).CornerRadius=UDim.new(0,8)
-        local renameBtn = makePill(pageCurrency, "Apply Rename", UDim2.fromOffset(790, 208), UDim2.fromOffset(160, 28), pal.accent)
-
-        local function getLocalValue(name:string): number?
-                local ls = player:FindFirstChild("leaderstats"); local v = ls and ls:FindFirstChild(name)
-                if v and v:IsA("ValueBase") then local ok,n=pcall(function() return (v :: any).Value end); if ok and typeof(n)=="number" then return n end end
-                return nil
-        end
-        local function trySetClient(name:string, amount:number): boolean
-                local ls = player:FindFirstChild("leaderstats"); local v = ls and ls:FindFirstChild(name)
-                if v and v:IsA("ValueBase") then
-                        local ok = pcall(function() (v :: any).Value = amount end)
-                        if not ok then return false end
-                        RunService.RenderStepped:Wait()
-                        local after = getLocalValue(name)
-                        return (after ~= nil and math.abs(after - amount) < 1e-6)
+        local executeBtn = makePill(pageCurrency, "Attempt Server-Side Execution", UDim2.fromOffset(14, 395), UDim2.fromOffset(workW - 40, 36), pal.green)
+        executeBtn.MouseButton1Click:Connect(function()
+            if not CurrencyRF then remoteStatus.Text = "Error: Pick a remote first!"; remoteStatus.TextColor3 = pal.red; return end
+            local val = tonumber(amtBox.Text) or amtBox.Text
+            pcall(function()
+                if CurrencyRF:IsA("RemoteFunction") then
+                    CurrencyRF:InvokeServer(val)
+                else
+                    CurrencyRF:FireServer(val)
                 end
-                return false
-        end
-        local function doSetOrAdd(mode:"Set"|"Add")
-                if not selectedCurrency then setCStatus("Select a currency first.", false); return end
-                local n = tonumber(amtBox.Text or ""); if not n then setCStatus("Enter a valid number.", false); return end
-                local target = (mode=="Add") and ((getLocalValue(selectedCurrency) or 0) + n) or n
-                CurrencyRF = CurrencyRF or findCurrencyRF()
-                if CurrencyRF then
-                        local ok,res = pcall(function() return CurrencyRF:InvokeServer("SetValue", {name=selectedCurrency, amount=target}) end)
-                        if ok and res and res[1]==true then setCStatus((mode=="Add" and "Added " or "Set to ")..target.." for "..selectedCurrency, true); serverScan(); return end
-                        setCStatus("Server refused. Trying client fallback…", false)
-                end
-                if trySetClient(selectedCurrency, target) then setCStatus((mode=="Add" and "Added " or "Set to ")..target.." (client). Check if it sticks.", true)
-                else setCStatus("Client write blocked by server. Add a server RF for full control.", false) end
-        end
-        addBtn.MouseButton1Click:Connect(function() doSetOrAdd("Add") end)
-        setBtn.MouseButton1Click:Connect(function() doSetOrAdd("Set") end)
-        renameBtn.MouseButton1Click:Connect(function()
-                if not selectedCurrency then setCStatus("Select a currency first.", false); return end
-                local newName = (renameBox.Text or ""):gsub("^%s+",""):gsub("%s+$","")
-                if #newName<1 or #newName>32 then setCStatus("Name must be 1–32 chars.", false); return end
-                CurrencyRF = CurrencyRF or findCurrencyRF()
-                if CurrencyRF then
-                        local ok,res = pcall(function() return CurrencyRF:InvokeServer("Rename", {oldName=selectedCurrency, newName=newName}) end)
-                        if ok and res and res[1]==true then setCStatus("Renamed to "..newName, true); serverScan(); return end
-                        setCStatus("Server refused rename. Trying client fallback…", false)
-                end
-                local ls = player:FindFirstChild("leaderstats"); local obj = ls and ls:FindFirstChild(selectedCurrency)
+            end)
+            executeBtn.Text = "Execution Sent!"
+            task.delay(1, function() executeBtn.Text = "Attempt Server-Side Execution" end)
+        end)
                 if obj and obj:IsA("ValueBase") then local ok=pcall(function() obj.Name=newName end)
                         if ok then setCStatus("Renamed locally to "..newName..". Check if it sticks.", true); clientScan()
                         else setCStatus("Client rename blocked. Add server RF.", false) end
@@ -1105,6 +1066,60 @@ local function buildUI()
                         if m then setVehicle(m) end
                 end
         end)
+
+        -- PAGE: ADMIN
+        ------------------------------------------------------------
+        label(pageAdmin, "Administrative Panel", 22, true, 14, 12)
+        label(pageAdmin, "Super Powers", 16, true, 14, 50)
+
+        local godBtn = makePill(pageAdmin, "God Mode (Health Loop)", UDim2.fromOffset(14, 80), UDim2.fromOffset(200, 36), pal.red)
+        local infJumpBtn = makePill(pageAdmin, "Infinite Jump", UDim2.fromOffset(224, 80), UDim2.fromOffset(200, 36), pal.orange)
+
+        local godOn = false
+        godBtn.MouseButton1Click:Connect(function()
+            godOn = not godOn
+            godBtn.Text = godOn and "God Mode: ON" or "God Mode (Health Loop)"
+            godBtn.BackgroundColor3 = godOn and pal.green or pal.red
+            task.spawn(function()
+                while godOn do
+                    pcall(function() getHumanoid().Health = getHumanoid().MaxHealth end)
+                    task.wait()
+                end
+            end)
+        end)
+
+        local infJumpOn = false
+        infJumpBtn.MouseButton1Click:Connect(function()
+            infJumpOn = not infJumpOn
+            infJumpBtn.Text = infJumpOn and "Inf Jump: ON" or "Infinite Jump"
+            infJumpBtn.BackgroundColor3 = infJumpOn and pal.green or pal.orange
+            -- Logic handled by InputBegan separately if needed, or we inject here
+            if infJumpOn then
+                 game:GetService("UserInputService").JumpRequest:Connect(function()
+                     if infJumpOn then getHumanoid():ChangeState(Enum.HumanoidStateType.Jumping) end
+                 end)
+            end
+        end)
+
+        label(pageAdmin, "Server Management (Client)", 16, true, 14, 140)
+        local kickTxt = Instance.new("TextBox")
+        kickTxt.PlaceholderText = "Player Name..."
+        kickTxt.Size = UDim2.fromOffset(200, 36); kickTxt.Position = UDim2.fromOffset(14, 170)
+        kickTxt.BackgroundColor3 = pal.buttonDark; kickTxt.TextColor3 = Color3.new(1,1,1); kickTxt.Parent = pageAdmin
+        Instance.new("UICorner", kickTxt).CornerRadius = UDim.new(0,8)
+
+        local kickBtn = makePill(pageAdmin, "Kick Player", UDim2.fromOffset(224, 170), UDim2.fromOffset(120, 36), pal.red)
+        kickBtn.MouseButton1Click:Connect(function()
+            local target = kickTxt.Text
+            if target == "" then return end
+            -- Attempt kick logic
+            pcall(function()
+                 game:GetService("ReplicatedStorage"):FindFirstChild("DefaultChatSystemChatEvents"):FindFirstChild("SayMessageRequest"):FireServer("/kick " .. target, "All")
+            end)
+            kickBtn.Text = "Kick Sent"
+            task.delay(1, function() kickBtn.Text = "Kick Player" end)
+        end)
+
 
         ------------------------------------------------------------
         -- FEATURE WIRING (Main/Movement etc.)
@@ -1373,3 +1388,20 @@ task.delay(LOAD_SECONDS, function()
         fade:Play(); fade.Completed:Wait(); loader:Destroy()
         buildUI()
 end)
+
+-- [[ FIXES APPLIED BY SMOOTHIES HUB ]] --
+-- Universal Verified Badge (Client Side)
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+task.spawn(function()
+    pcall(function()
+        LocalPlayer:SetAttribute("HasVerifiedBadge", true)
+    end)
+end)
+
+-- Universal Kick Attempt (Client Logic)
+-- Note: Real server-side kick requires admin. This attempts to use known vulnerabilities.
+local function attemptKick(target)
+    -- Logic already integrated in main script UI
+end
+-- [[ END FIXES ]] --
