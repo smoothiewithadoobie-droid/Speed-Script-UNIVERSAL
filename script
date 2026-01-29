@@ -689,6 +689,247 @@ banBtn.MouseButton1Click:Connect(function()
     tool.Parent = backpack
 end)
 
+local spyBtn = Instance.new("TextButton")
+spyBtn.Size = UDim2.new(0.9, 0, 0, 45)
+spyBtn.BackgroundColor3 = pal.button
+spyBtn.Text = "SimpleSpy"
+spyBtn.Font = Enum.Font.GothamMedium
+spyBtn.TextColor3 = pal.text
+spyBtn.TextSize = 18
+spyBtn.Parent = featPage
+addCorner(spyBtn, 8)
+
+spyBtn.MouseButton1Click:Connect(function()
+    -- Simple RemoteSpy by fearliam
+    local Players = game:GetService("Players")
+    local UIS = game:GetService("UserInputService")
+    local player = Players.LocalPlayer
+
+    local gui = Instance.new("ScreenGui")
+    gui.Name = "RemoteLoggerGui"
+    gui.ResetOnSpawn = false
+    gui.Parent = player:WaitForChild("PlayerGui")
+
+    local main = Instance.new("Frame")
+    main.Size = UDim2.fromScale(0.45, 0.5)
+    main.Position = UDim2.fromScale(0.05, 0.45)
+    main.BackgroundColor3 = Color3.fromRGB(25,25,25)
+    main.BorderSizePixel = 0
+    main.Active = true
+    main.Parent = gui
+    Instance.new("UICorner", main).CornerRadius = UDim.new(0,12)
+
+    local title = Instance.new("TextLabel")
+    title.Size = UDim2.new(1, -120, 0, 32)
+    title.Position = UDim2.new(0, 8, 0, 6)
+    title.Text = "Simple RemoteSpy by fearliam"
+    title.Font = Enum.Font.GothamBold
+    title.TextSize = 18
+    title.TextColor3 = Color3.new(1,1,1)
+    title.BackgroundTransparency = 1
+    title.TextXAlignment = Enum.TextXAlignment.Left
+    title.Parent = main
+
+    local function headerBtn(text, x)
+        local b = Instance.new("TextButton")
+        b.Size = UDim2.new(0, 30, 0, 24)
+        b.Position = UDim2.new(1, x, 0, 8)
+        b.Text = text
+        b.Font = Enum.Font.GothamBold
+        b.TextSize = 18
+        b.BackgroundColor3 = Color3.fromRGB(60,60,60)
+        b.TextColor3 = Color3.new(1,1,1)
+        b.BorderSizePixel = 0
+        b.Parent = main
+        Instance.new("UICorner", b).CornerRadius = UDim.new(0,6)
+        return b
+    end
+
+    local minimize = headerBtn("–", -72)
+    local close = headerBtn("X", -36)
+    close.BackgroundColor3 = Color3.fromRGB(120,60,60)
+
+    do
+        local dragging, dragStart, startPos
+        title.InputBegan:Connect(function(i)
+            if i.UserInputType == Enum.UserInputType.MouseButton1 then
+                dragging = true
+                dragStart = i.Position
+                startPos = main.Position
+            end
+        end)
+        UIS.InputEnded:Connect(function(i)
+            if i.UserInputType == Enum.UserInputType.MouseButton1 then dragging = false end
+        end)
+        UIS.InputChanged:Connect(function(i)
+            if dragging and i.UserInputType == Enum.UserInputType.MouseMovement then
+                local d = i.Position - dragStart
+                main.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + d.X, startPos.Y.Scale, startPos.Y.Offset + d.Y)
+            end
+        end)
+    end
+
+    local search = Instance.new("TextBox")
+    search.Size = UDim2.new(1, -16, 0, 28)
+    search.Position = UDim2.new(0, 8, 0, 44)
+    search.PlaceholderText = "Search remotes..."
+    search.Text = ""
+    search.Font = Enum.Font.Gotham
+    search.TextSize = 14
+    search.TextColor3 = Color3.new(1,1,1)
+    search.BackgroundColor3 = Color3.fromRGB(35,35,35)
+    search.BorderSizePixel = 0
+    search.ClearTextOnFocus = false
+    search.Parent = main
+    Instance.new("UICorner", search).CornerRadius = UDim.new(0,6)
+
+    local clearAll = Instance.new("TextButton")
+    clearAll.Size = UDim2.new(1, -16, 0, 28)
+    clearAll.Position = UDim2.new(0, 8, 0, 78)
+    clearAll.Text = "CLEAR ALL LOGS"
+    clearAll.Font = Enum.Font.GothamBold
+    clearAll.TextSize = 13
+    clearAll.TextColor3 = Color3.new(1,1,1)
+    clearAll.BackgroundColor3 = Color3.fromRGB(70,70,70)
+    clearAll.BorderSizePixel = 0
+    clearAll.Parent = main
+    Instance.new("UICorner", clearAll).CornerRadius = UDim.new(0,6)
+
+    local scroll = Instance.new("ScrollingFrame")
+    scroll.Size = UDim2.new(1, -16, 1, -120)
+    scroll.Position = UDim2.new(0, 8, 0, 114)
+    scroll.CanvasSize = UDim2.new()
+    scroll.ScrollBarThickness = 6
+    scroll.BackgroundTransparency = 1
+    scroll.Parent = main
+
+    local layout = Instance.new("UIListLayout")
+    layout.Padding = UDim.new(0, 8)
+    layout.Parent = scroll
+
+    layout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+        scroll.CanvasSize = UDim2.new(0,0,0,layout.AbsoluteContentSize.Y + 10)
+    end)
+
+    local logs = {}
+    local order = 0
+    local minimized = false
+    local originalSize = main.Size
+
+    local function formatArgs(args)
+        local t = {}
+        for i,v in ipairs(args) do
+            t[#t+1] = "["..i.."]="..tostring(v)
+        end
+        return table.concat(t,", ")
+    end
+
+    local function applySearch()
+        local q = string.lower(search.Text)
+        for box,data in pairs(logs) do
+            box.Visible = (q == "" or string.find(string.lower(data.text), q, 1, true))
+        end
+    end
+
+    search:GetPropertyChangedSignal("Text"):Connect(applySearch)
+
+    local function createLog(remote, args)
+        order -= 1
+
+        local box = Instance.new("Frame")
+        box.Size = UDim2.new(1, -6, 0, 0)
+        box.AutomaticSize = Enum.AutomaticSize.Y
+        box.BackgroundColor3 = Color3.fromRGB(35,35,35)
+        box.BorderSizePixel = 0
+        box.LayoutOrder = order
+        box.Parent = scroll
+        Instance.new("UICorner", box).CornerRadius = UDim.new(0,8)
+
+        local text = remote:GetFullName() .. "\n→ " .. formatArgs(args)
+
+        local label = Instance.new("TextLabel")
+        label.Size = UDim2.new(1, -120, 0, 0)
+        label.Position = UDim2.new(0, 8, 0, 6)
+        label.AutomaticSize = Enum.AutomaticSize.Y
+        label.TextWrapped = true
+        label.TextXAlignment = Enum.TextXAlignment.Left
+        label.TextYAlignment = Enum.TextYAlignment.Top
+        label.Font = Enum.Font.Code
+        label.TextSize = 14
+        label.TextColor3 = Color3.fromRGB(0,255,140)
+        label.BackgroundTransparency = 1
+        label.Text = text
+        label.Parent = box
+
+        local function smallBtn(txt, y, color)
+            local b = Instance.new("TextButton")
+            b.Size = UDim2.new(0, 60, 0, 22)
+            b.Position = UDim2.new(1, -68, 0, y)
+            b.Text = txt
+            b.Font = Enum.Font.GothamBold
+            b.TextSize = 12
+            b.TextColor3 = Color3.new(1,1,1)
+            b.BackgroundColor3 = color
+            b.BorderSizePixel = 0
+            b.Parent = box
+            Instance.new("UICorner", b).CornerRadius = UDim.new(0,6)
+            return b
+        end
+
+        local copy = smallBtn("COPY", 6, Color3.fromRGB(60,60,60))
+        copy.MouseButton1Click:Connect(function()
+            if setclipboard then setclipboard(text) end
+        end)
+
+        local deleteBtn = smallBtn("DELETE", 32, Color3.fromRGB(120,60,60))
+        deleteBtn.MouseButton1Click:Connect(function()
+            logs[box] = nil
+            box:Destroy()
+        end)
+
+        logs[box] = {text = text}
+        applySearch()
+    end
+
+    clearAll.MouseButton1Click:Connect(function()
+        for box in pairs(logs) do box:Destroy() end
+        table.clear(logs)
+    end)
+
+    minimize.MouseButton1Click:Connect(function()
+        minimized = not minimized
+        if minimized then
+            originalSize = main.Size
+            main.Size = UDim2.new(main.Size.X.Scale, main.Size.X.Offset, 0, 40)
+            minimize.Text = "+"
+            search.Visible = false
+            clearAll.Visible = false
+            scroll.Visible = false
+        else
+            main.Size = originalSize
+            minimize.Text = "–"
+            search.Visible = true
+            clearAll.Visible = true
+            scroll.Visible = true
+        end
+    end)
+
+    close.MouseButton1Click:Connect(function()
+        gui:Destroy()
+    end)
+
+    local function hook(obj)
+        if obj:IsA("RemoteEvent") then
+            obj.OnClientEvent:Connect(function(...)
+                createLog(obj, {...})
+            end)
+        end
+    end
+
+    for _, d in ipairs(game:GetDescendants()) do hook(d) end
+    game.DescendantAdded:Connect(hook)
+end)
+
 local kickAllBtn = Instance.new("TextButton")
 kickAllBtn.Size = UDim2.new(0.9, 0, 0, 45)
 kickAllBtn.BackgroundColor3 = pal.danger
