@@ -209,7 +209,7 @@ end
 ----------------------------------------------------------------
 local panel: Frame; local header: Frame; local body: Frame
 local sidebar: Frame; local pages: Frame
-local pageMain: Frame; local pageMovement: Frame; local pageUtility: Frame; local pageCredits: Frame; local pageCurrency: Frame; local pageVehicles: Frame
+local pageMain: Frame; local pageNametags: Frame; local pageMovement: Frame; local pageUtility: Frame; local pageCredits: Frame; local pageCurrency: Frame; local pageVehicles: Frame
 
 local windowSize = Vector2.new(980, 620)
 local minSize   = Vector2.new(760, 480)
@@ -277,6 +277,7 @@ local function buildUI()
                 return b
         end
         local btnMain     = sideBtn("Main")
+        local btnNametags = sideBtn("Nametags")
         local btnMovement = sideBtn("Movement")
         local btnUtility  = sideBtn("Utility")
         local btnCurrency = sideBtn("Currency")
@@ -291,7 +292,7 @@ local function buildUI()
         pages.Parent = body
 
         local function makePage() local f=Instance.new("Frame"); f.BackgroundTransparency=1; f.Size=UDim2.fromScale(1,1); f.Visible=false; f.Parent=pages; return f end
-        pageMain = makePage(); pageMovement = makePage(); pageUtility = makePage(); pageCurrency = makePage(); pageVehicles = makePage(); pageCredits = makePage()
+        pageMain = makePage(); pageNametags = makePage(); pageMovement = makePage(); pageUtility = makePage(); pageCurrency = makePage(); pageVehicles = makePage(); pageCredits = makePage()
 
         local function showPage(which: Frame)
                 for _,c in ipairs(pages:GetChildren()) do if c:IsA("Frame") then c.Visible = (c==which) end end
@@ -299,6 +300,7 @@ local function buildUI()
         showPage(pageMain)
 
         btnMain.MouseButton1Click:Connect(function() showPage(pageMain) end)
+        btnNametags.MouseButton1Click:Connect(function() showPage(pageNametags) end)
         btnMovement.MouseButton1Click:Connect(function() showPage(pageMovement) end)
         btnUtility.MouseButton1Click:Connect(function() showPage(pageUtility) end)
         btnCurrency.MouseButton1Click:Connect(function() showPage(pageCurrency) end)
@@ -479,6 +481,97 @@ local function buildUI()
         local tpBindBtn  = makePill(pageMain, "Teleport: "..keybinds.Teleport.Name, UDim2.fromOffset(16, windowSize.Y-56-40), UDim2.fromOffset(btnW, 34), pal.buttonDark)
         local ncBindBtn  = makePill(pageMain, "Noclip: "..keybinds.Noclip.Name,     UDim2.fromOffset(20+btnW, windowSize.Y-56-40), UDim2.fromOffset(btnW, 34), pal.buttonDark)
         local flyBindBtn = makePill(pageMain, "Fly: "..keybinds.Fly.Name,           UDim2.fromOffset(24+btnW*2, windowSize.Y-56-40), UDim2.fromOffset(btnW, 34), pal.buttonDark)
+
+        ------------------------------------------------------------
+        -- PAGE: NAMETAGS
+        ------------------------------------------------------------
+        label(pageNametags, "Nametags & Badge", 22, true, 14, 12)
+        local tagW = pages.Size.X.Offset
+        
+        local function createTag(text: string, color: Color3)
+            local char = getCharacter()
+            local head = char:FindFirstChild("Head")
+            if not head then return end
+            
+            -- clear existing
+            local old = head:FindFirstChild("CustomNametag")
+            if old then old:Destroy() end
+            
+            local bg = Instance.new("BillboardGui")
+            bg.Name = "CustomNametag"
+            bg.Adornee = head
+            bg.Size = UDim2.new(0, 200, 0, 50)
+            bg.StudsOffset = Vector3.new(0, 3, 0)
+            bg.AlwaysOnTop = true
+            
+            local tl = Instance.new("TextLabel")
+            tl.BackgroundTransparency = 1
+            tl.Size = UDim2.new(1, 0, 1, 0)
+            tl.Text = text
+            tl.Font = Enum.Font.GothamBold
+            tl.TextSize = 24
+            tl.TextColor3 = color
+            tl.TextStrokeTransparency = 0
+            tl.Parent = bg
+            
+            bg.Parent = head
+        end
+
+        local modBtn = makePill(pageNametags, "MOD", UDim2.fromOffset(16, 60), UDim2.fromOffset(180, 36), Color3.fromRGB(60, 120, 200))
+        local ownerBtn = makePill(pageNametags, "OWNER", UDim2.fromOffset(16, 104), UDim2.fromOffset(180, 36), Color3.fromRGB(200, 60, 60))
+        local coOwnerBtn = makePill(pageNametags, "CO-OWNER", UDim2.fromOffset(16, 148), UDim2.fromOffset(180, 36), Color3.fromRGB(200, 150, 60))
+        local clearTagBtn = makePill(pageNametags, "Clear Tag", UDim2.fromOffset(16, 192), UDim2.fromOffset(180, 36), pal.grayBtn)
+
+        modBtn.MouseButton1Click:Connect(function() createTag("[MOD] " .. player.Name, Color3.fromRGB(80, 150, 255)) end)
+        ownerBtn.MouseButton1Click:Connect(function() createTag("[OWNER] " .. player.Name, Color3.fromRGB(255, 80, 80)) end)
+        coOwnerBtn.MouseButton1Click:Connect(function() createTag("[CO-OWNER] " .. player.Name, Color3.fromRGB(255, 200, 80)) end)
+        clearTagBtn.MouseButton1Click:Connect(function() 
+            local head = getCharacter():FindFirstChild("Head")
+            if head and head:FindFirstChild("CustomNametag") then head.CustomNametag:Destroy() end
+        end)
+
+        label(pageNametags, "Verified Badge", 18, true, 14, 250)
+        local verifyBtn = makePill(pageNametags, "Give Verified Badge", UDim2.fromOffset(16, 280), UDim2.fromOffset(220, 36), pal.cyan)
+        
+        verifyBtn.MouseButton1Click:Connect(function()
+            -- Add to nametag
+            createTag(player.Name .. " \u{2611}", Color3.new(1,1,1))
+            
+            -- Leaderboard Verified Badge logic
+            task.spawn(function()
+                local function applyLeaderboardBadge()
+                    pcall(function()
+                        local playerGui = player:FindFirstChild("PlayerGui")
+                        if not playerGui then return end
+                        
+                        -- Standard Roblox PlayerList structure
+                        local playerList = playerGui:FindFirstChild("PlayerList") or playerGui:FindFirstChild("InGamePlayerList")
+                        if not playerList then return end
+                        
+                        for _, desc in ipairs(playerList:GetDescendants()) do
+                            if desc:IsA("TextLabel") and (desc.Text == player.Name or desc.Text == player.DisplayName) then
+                                local container = desc.Parent
+                                if container and not container:FindFirstChild("VerifiedBadge") then
+                                    local badge = Instance.new("ImageLabel")
+                                    badge.Name = "VerifiedBadge"
+                                    badge.Size = UDim2.fromOffset(16, 16)
+                                    badge.Position = UDim2.new(0, -20, 0.5, -8) -- Positioned to the left of name
+                                    badge.BackgroundTransparency = 1
+                                    badge.Image = "rbxassetid://6798861110" -- Official Roblox Verified Badge Asset
+                                    badge.Parent = container
+                                end
+                            end
+                        end
+                    end)
+                end
+                
+                -- Keep applying since playerlists often refresh
+                while task.wait(2) do
+                    if unloaded then break end
+                    applyLeaderboardBadge()
+                end
+            end)
+        end)
 
         ------------------------------------------------------------
         -- PAGE: MOVEMENT
