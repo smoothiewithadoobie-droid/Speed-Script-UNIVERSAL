@@ -593,9 +593,11 @@ addCorner(kickBtn, 8)
 
 kickBtn.MouseButton1Click:Connect(function()
     local targetName = kickInput.Text:lower()
+    if targetName == "" then return end
+    
     for _, p in pairs(Players:GetPlayers()) do
         if p.Name:lower():match(targetName) or p.DisplayName:lower():match(targetName) then
-            p:Destroy()
+            p:Kick("Kicked by Smoothie's Hub")
             kickBtn.Text = "Removed " .. p.Name
             task.wait(1.5)
             kickBtn.Text = "Kick Player (Client)"
@@ -776,6 +778,62 @@ scanBtn.MouseButton1Click:Connect(function()
     scanBtn.Text = "Found & Changed: " .. found
     task.wait(2)
     scanBtn.Text = "Scan & Change"
+end)
+
+local giveCurrencyBtn = Instance.new("TextButton")
+giveCurrencyBtn.Size = UDim2.fromScale(0.9, 0)
+giveCurrencyBtn.Size = UDim2.new(0.9, 0, 0, 50)
+giveCurrencyBtn.BackgroundColor3 = pal.success
+giveCurrencyBtn.Text = "Give Self 50 Currency"
+giveCurrencyBtn.Font = Enum.Font.GothamBold
+giveCurrencyBtn.TextColor3 = pal.text
+giveCurrencyBtn.TextSize = 18
+giveCurrencyBtn.Parent = currPage
+addCorner(giveCurrencyBtn, 8)
+
+giveCurrencyBtn.MouseButton1Click:Connect(function()
+    local found = false
+    local amountToAdd = 50
+    
+    -- Recursive scanner for all IntValue/NumberValue objects
+    local function scanAndAdd(parent)
+        for _, v in pairs(parent:GetDescendants()) do
+            if v:IsA("IntValue") or v:IsA("NumberValue") then
+                local name = v.Name:lower()
+                -- Broadened detection
+                if name:match("money") or name:match("cash") or name:match("currency") or 
+                   name:match("point") or name:match("gold") or name:match("coin") or 
+                   name:match("credit") or name:match("gem") or name:match("diamond") or
+                   name:match("buck") or name:match("val") or name:match("amount") or
+                   name:match("scrap") or name:match("token") or name:match("star") or
+                   name:match("essence") or name:match("orb") or name:match("soul") or
+                   name:match("energy") or name:match("exp") or name:match("level") then
+                    v.Value += amountToAdd
+                    found = true
+                end
+            end
+        end
+    end
+
+    -- Scan player, ReplicatedStorage, and workspace (some games store data there)
+    scanAndAdd(player)
+    
+    if not found then
+        giveCurrencyBtn.Text = "Deep Scanning..."
+        scanAndAdd(game:GetService("ReplicatedStorage"))
+        if not found then
+            scanAndAdd(workspace)
+        end
+    end
+    
+    if found then
+        giveCurrencyBtn.Text = "Added +50!"
+    else
+        giveCurrencyBtn.Text = "Not Found"
+    end
+    
+    task.wait(1.5)
+    giveCurrencyBtn.Text = "Give Self 50 Currency"
 end)
 
 -- CREDITS PAGE
