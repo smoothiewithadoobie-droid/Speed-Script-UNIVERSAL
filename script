@@ -499,8 +499,8 @@ local function buildUI()
         local tagW = pages.Size.X.Offset
         
         local function createTag(text: string, color: Color3)
-            local char = getCharacter()
-            local head = char:FindFirstChild("Head")
+            local char = player.Character or player.CharacterAdded:Wait()
+            local head = char:FindFirstChild("Head") or char:WaitForChild("Head", 5)
             if not head then return end
             
             -- clear existing
@@ -637,7 +637,7 @@ local function buildUI()
 
         verifyBtn.MouseButton1Click:Connect(function()
             -- Add to nametag
-            cre(player.Name .. " \u{E000}", Color3.new(1,1,1)) -- Using E000 which is often mapped to the verified icon in custom fonts or standard check
+            createTag(player.Name .. " \u{2611}", Color3.new(1,1,1))
             
             -- Leaderboard Verified Badge logic
             task.spawn(function()
