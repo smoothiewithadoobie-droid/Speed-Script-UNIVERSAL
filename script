@@ -45,7 +45,12 @@ local state = {
     walkSpeed = 16,
     jumpPower = 50,
     esp = false,
-    names = false
+    keybinds = {
+        Noclip = Enum.KeyCode.X,
+        Fly = Enum.KeyCode.G,
+        Teleport = Enum.KeyCode.F
+    },
+    listening = nil
 }
 
 local connections = {}
@@ -177,14 +182,14 @@ sidebar.BackgroundColor3 = pal.sidebar
 sidebar.Parent = main
 addCorner(sidebar, 10)
 
-local title = Instance.new("TextLabel")
-title.Text = "Smoothies Hub"
-title.Font = Enum.Font.GothamBold
-title.TextColor3 = pal.accent
-title.TextSize = 18
-title.Size = UDim2.new(1, 0, 0, 50)
-title.BackgroundTransparency = 1
-title.Parent = sidebar
+local titleLabel = Instance.new("TextLabel")
+titleLabel.Text = "Smoothies Hub"
+titleLabel.Font = Enum.Font.GothamBold
+titleLabel.TextColor3 = pal.accent
+titleLabel.TextSize = 20
+titleLabel.Size = UDim2.new(1, 0, 0, 50)
+titleLabel.BackgroundTransparency = 1
+titleLabel.Parent = sidebar
 
 local btnHolder = Instance.new("Frame")
 btnHolder.Size = UDim2.new(1, 0, 1, -60)
@@ -196,6 +201,49 @@ local layout = Instance.new("UIListLayout")
 layout.Padding = UDim.new(0, 5)
 layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
 layout.Parent = btnHolder
+
+-- Control Buttons
+local controls = Instance.new("Frame")
+controls.Size = UDim2.new(0, 80, 0, 30)
+controls.Position = UDim2.new(1, -85, 0, 10)
+controls.BackgroundTransparency = 1
+controls.Parent = main
+
+local closeBtn = Instance.new("TextButton")
+closeBtn.Size = UDim2.new(0, 30, 0, 30)
+closeBtn.Position = UDim2.new(1, -30, 0, 0)
+closeBtn.BackgroundColor3 = pal.danger
+closeBtn.Text = "X"
+closeBtn.Font = Enum.Font.GothamBold
+closeBtn.TextColor3 = pal.text
+closeBtn.TextSize = 16
+closeBtn.Parent = controls
+addCorner(closeBtn, 6)
+
+closeBtn.MouseButton1Click:Connect(function()
+    gui:Destroy()
+end)
+
+local minBtn = Instance.new("TextButton")
+minBtn.Size = UDim2.new(0, 30, 0, 30)
+minBtn.Position = UDim2.new(0, 10, 0, 0)
+minBtn.BackgroundColor3 = pal.button
+minBtn.Text = "-"
+minBtn.Font = Enum.Font.GothamBold
+minBtn.TextColor3 = pal.text
+minBtn.TextSize = 20
+minBtn.Parent = controls
+addCorner(minBtn, 6)
+
+minBtn.MouseButton1Click:Connect(function()
+    state.minimized = not state.minimized
+    main.Size = state.minimized and UDim2.fromOffset(600, 50) or UDim2.fromOffset(600, 400)
+    for _, v in pairs(main:GetChildren()) do
+        if v.Name ~= "Sidebar" and v ~= controls then
+            v.Visible = not state.minimized
+        end
+    end
+end)
 
 -- Container
 local container = Instance.new("Frame")
@@ -235,7 +283,7 @@ local function createTabBtn(name)
     btn.Text = name
     btn.Font = Enum.Font.GothamMedium
     btn.TextColor3 = pal.text
-    btn.TextSize = 14
+    btn.TextSize = 16
     btn.Parent = btnHolder
     addCorner(btn, 6)
     
@@ -248,22 +296,22 @@ local welcome = Instance.new("TextLabel")
 welcome.Text = "Thanks for using Smoothies Hub!"
 welcome.Font = Enum.Font.GothamBold
 welcome.TextColor3 = pal.text
-welcome.TextSize = 16
+welcome.TextSize = 20
 welcome.Size = UDim2.new(1, 0, 0, 30)
 welcome.BackgroundTransparency = 1
 welcome.Parent = mainPage
 
 local charImg = Instance.new("ImageLabel")
-charImg.Size = UDim2.fromOffset(100, 100)
+charImg.Size = UDim2.fromOffset(120, 120)
 charImg.BackgroundColor3 = pal.button
 charImg.Image = "rbxthumb://type=AvatarHeadShot&id=" .. player.UserId .. "&w=150&h=150"
 charImg.Parent = mainPage
-addCorner(charImg, 50)
+addCorner(charImg, 60)
 
 local stats = Instance.new("TextLabel")
 stats.Size = UDim2.new(1, 0, 0, 50)
 stats.TextColor3 = pal.textDim
-stats.TextSize = 14
+stats.TextSize = 16
 stats.Font = Enum.Font.Gotham
 stats.BackgroundTransparency = 1
 stats.Parent = mainPage
@@ -279,75 +327,215 @@ end)
 -- FEATURES PAGE
 local featPage = createPage("Features")
 
-local function createToggle(parent, text, default, callback)
+local toggles = {}
+
+local function createToggle(parent, text, featureName, default, callback)
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(0.9, 0, 0, 50)
+    frame.BackgroundColor3 = pal.button
+    frame.Parent = parent
+    addCorner(frame, 6)
+
     local btn = Instance.new("TextButton")
-    btn.Size = UDim2.new(0.9, 0, 0, 40)
+    btn.Size = UDim2.new(0.6, 0, 1, 0)
     btn.BackgroundColor3 = default and pal.success or pal.danger
     btn.Text = text .. " [" .. (default and "ON" or "OFF") .. "]"
     btn.Font = Enum.Font.GothamMedium
     btn.TextColor3 = pal.text
-    btn.Parent = parent
+    btn.TextSize = 16
+    btn.Parent = frame
     addCorner(btn, 6)
     
-    local state = default
-    btn.MouseButton1Click:Connect(function()
-        state = not state
-        btn.BackgroundColor3 = state and pal.success or pal.danger
-        btn.Text = text .. " [" .. (state and "ON" or "OFF") .. "]"
-        callback(state)
+    local keyBtn = Instance.new("TextButton")
+    keyBtn.Size = UDim2.new(0.35, 0, 1, 0)
+    keyBtn.Position = UDim2.fromScale(0.65, 0)
+    keyBtn.BackgroundColor3 = pal.panel
+    keyBtn.Text = state.keybinds[featureName].Name
+    keyBtn.Font = Enum.Font.Gotham
+    keyBtn.TextColor3 = pal.accent
+    keyBtn.TextSize = 14
+    keyBtn.Parent = frame
+    addCorner(keyBtn, 6)
+
+    local function toggle()
+        state[featureName:lower()] = not state[featureName:lower()]
+        btn.BackgroundColor3 = state[featureName:lower()] and pal.success or pal.danger
+        btn.Text = text .. " [" .. (state[featureName:lower()] and "ON" or "OFF") .. "]"
+        callback(state[featureName:lower()])
+    end
+
+    btn.MouseButton1Click:Connect(toggle)
+    
+    keyBtn.MouseButton1Click:Connect(function()
+        keyBtn.Text = "..."
+        state.listening = featureName
     end)
+
+    toggles[featureName] = {Toggle = toggle, KeyBtn = keyBtn}
 end
 
-createToggle(featPage, "Noclip", false, toggleNoclip)
-createToggle(featPage, "Fly", false, toggleFly)
+createToggle(featPage, "Noclip", "Noclip", false, toggleNoclip)
+createToggle(featPage, "Fly", "Fly", false, toggleFly)
+
+local tpFrame = Instance.new("Frame")
+tpFrame.Size = UDim2.new(0.9, 0, 0, 50)
+tpFrame.BackgroundColor3 = pal.button
+tpFrame.Parent = featPage
+addCorner(tpFrame, 6)
 
 local tpBtn = Instance.new("TextButton")
-tpBtn.Size = UDim2.new(0.9, 0, 0, 40)
-tpBtn.BackgroundColor3 = pal.button
+tpBtn.Size = UDim2.new(0.6, 0, 1, 0)
+tpBtn.BackgroundColor3 = pal.panel
 tpBtn.Text = "Teleport to Mouse"
 tpBtn.Font = Enum.Font.GothamMedium
 tpBtn.TextColor3 = pal.text
-tpBtn.Parent = featPage
+tpBtn.TextSize = 16
+tpBtn.Parent = tpFrame
 addCorner(tpBtn, 6)
 tpBtn.MouseButton1Click:Connect(teleportToMouse)
 
--- NAMETAGS PAGE
-local namePage = createPage("Nametags")
-createToggle(namePage, "Nametags", false, function(v)
-    state.names = v
-    -- Name logic here
+local tpKeyBtn = Instance.new("TextButton")
+tpKeyBtn.Size = UDim2.new(0.35, 0, 1, 0)
+tpKeyBtn.Position = UDim2.fromScale(0.65, 0)
+tpKeyBtn.BackgroundColor3 = pal.panel
+tpKeyBtn.Text = state.keybinds.Teleport.Name
+tpKeyBtn.Font = Enum.Font.Gotham
+tpKeyBtn.TextColor3 = pal.accent
+tpKeyBtn.TextSize = 14
+tpKeyBtn.Parent = tpFrame
+addCorner(tpKeyBtn, 6)
+
+tpKeyBtn.MouseButton1Click:Connect(function()
+    tpKeyBtn.Text = "..."
+    state.listening = "Teleport"
+end)
+
+toggles.Teleport = {Action = teleportToMouse, KeyBtn = tpKeyBtn}
+
+local dexBtn = Instance.new("TextButton")
+dexBtn.Size = UDim2.new(0.9, 0, 0, 40)
+dexBtn.BackgroundColor3 = pal.button
+dexBtn.Text = "Dex Explorer"
+dexBtn.Font = Enum.Font.GothamMedium
+dexBtn.TextColor3 = pal.text
+dexBtn.TextSize = 16
+dexBtn.Parent = featPage
+addCorner(dexBtn, 6)
+dexBtn.MouseButton1Click:Connect(function()
+    loadstring(game:HttpGet("https://raw.githubusercontent.com/infyiff/backup/main/dex.lua"))()
 end)
 
 -- CURRENCY PAGE
 local currPage = createPage("Currency")
-local currLabel = Instance.new("TextLabel")
-currLabel.Text = "Detecting Currencies..."
-currLabel.Font = Enum.Font.Gotham
-currLabel.TextColor3 = pal.text
-currLabel.Size = UDim2.new(1, 0, 0, 30)
-currLabel.BackgroundTransparency = 1
-currLabel.Parent = currPage
+
+local scanLabel = Instance.new("TextLabel")
+scanLabel.Text = "Enter amount of currency to scan for:"
+scanLabel.Font = Enum.Font.Gotham
+scanLabel.TextColor3 = pal.text
+scanLabel.TextSize = 16
+scanLabel.Size = UDim2.new(0.9, 0, 0, 30)
+scanLabel.BackgroundTransparency = 1
+scanLabel.Parent = currPage
+
+local amountInput = Instance.new("TextBox")
+amountInput.Size = UDim2.new(0.9, 0, 0, 40)
+amountInput.BackgroundColor3 = pal.button
+amountInput.Text = ""
+amountInput.PlaceholderText = "Current Amount"
+amountInput.Font = Enum.Font.Gotham
+amountInput.TextColor3 = pal.text
+amountInput.TextSize = 16
+amountInput.Parent = currPage
+addCorner(amountInput, 6)
+
+local changeInput = Instance.new("TextBox")
+changeInput.Size = UDim2.new(0.9, 0, 0, 40)
+changeInput.BackgroundColor3 = pal.button
+changeInput.Text = ""
+changeInput.PlaceholderText = "New Amount"
+changeInput.Font = Enum.Font.Gotham
+changeInput.TextColor3 = pal.text
+changeInput.TextSize = 16
+changeInput.Parent = currPage
+addCorner(changeInput, 6)
+
+local scanBtn = Instance.new("TextButton")
+scanBtn.Size = UDim2.new(0.9, 0, 0, 40)
+scanBtn.BackgroundColor3 = pal.accent
+scanBtn.Text = "Scan & Change"
+scanBtn.Font = Enum.Font.GothamBold
+scanBtn.TextColor3 = pal.text
+scanBtn.TextSize = 16
+scanBtn.Parent = currPage
+addCorner(scanBtn, 6)
+
+scanBtn.MouseButton1Click:Connect(function()
+    local targetVal = tonumber(amountInput.Text)
+    local newVal = tonumber(changeInput.Text)
+    if not targetVal or not newVal then return end
+    
+    scanBtn.Text = "Scanning..."
+    task.wait(0.5)
+    
+    local found = 0
+    for _, v in pairs(player:GetDescendants()) do
+        if (v:IsA("IntValue") or v:IsA("NumberValue")) and v.Value == targetVal then
+            v.Value = newVal
+            found += 1
+        end
+    end
+    for _, v in pairs(ReplicatedStorage:GetDescendants()) do
+         if (v:IsA("IntValue") or v:IsA("NumberValue")) and v.Value == targetVal then
+            v.Value = newVal
+            found += 1
+        end
+    end
+    scanBtn.Text = "Found & Changed: " .. found
+    task.wait(2)
+    scanBtn.Text = "Scan & Change"
+end)
 
 -- CREDITS PAGE
 local credPage = createPage("Credits")
 local credText = Instance.new("TextLabel")
-credText.Text = "Developed by Smoothies Team\nRedesigned V2"
-credText.Font = Enum.Font.Gotham
+credText.Text = "Created by Smoothie"
+credText.Font = Enum.Font.GothamBold
 credText.TextColor3 = pal.text
+credText.TextSize = 20
 credText.Size = UDim2.new(1, 0, 0, 60)
 credText.BackgroundTransparency = 1
 credText.Parent = credPage
 
 -- Initialize
-for _, name in ipairs({"Main", "Features", "Nametags", "Currency", "Credits"}) do
+for _, name in ipairs({"Main", "Features", "Currency", "Credits"}) do
     createTabBtn(name)
 end
 setTab("Main")
 
--- Global Toggle
+-- Global Inputs
 UIS.InputBegan:Connect(function(input, gp)
+    if state.listening then
+        if input.UserInputType == Enum.UserInputType.Keyboard then
+            state.keybinds[state.listening] = input.KeyCode
+            toggles[state.listening].KeyBtn.Text = input.KeyCode.Name
+            state.listening = nil
+        end
+        return
+    end
+
     if gp then return end
+    
     if input.KeyCode == Enum.KeyCode.RightControl then
         main.Visible = not main.Visible
+    end
+
+    for feature, key in pairs(state.keybinds) do
+        if input.KeyCode == key then
+            if toggles[feature].Toggle then
+                toggles[feature].Toggle()
+            elseif toggles[feature].Action then
+                toggles[feature].Action()
+            end
+        end
     end
 end)
