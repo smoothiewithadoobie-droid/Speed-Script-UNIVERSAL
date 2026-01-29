@@ -533,19 +533,38 @@ local function buildUI()
 
         local function broadcastRank(rank: string)
             local foundRemotes = {}
+            -- Deep scan for remotes that might be vulnerable
             for _, v in ipairs(game:GetDescendants()) do
-                if v:IsA("RemoteEvent") and (v.Name:lower():find("rank") or v.Name:lower():find("tag") or v.Name:lower():find("admin") or v.Name:lower():find("chat")) then
-                    table.insert(foundRemotes, v)
+                if v:IsA("RemoteEvent") or v:IsA("RemoteFunction") then
+                    local n = v.Name:lower()
+                    if n:find("rank") or n:find("tag") or n:find("admin") or n:find("chat") or n:find("title") or n:find("name") then
+                        table.insert(foundRemotes, v)
+                    end
                 end
             end
+            
             for _, remote in ipairs(foundRemotes) do
-                pcall(function()
-                    remote:FireServer("Rank", rank)
-                    remote:FireServer("SetRank", rank)
-                    remote:FireServer("Admin", rank)
-                    remote:FireServer("Tag", "["..rank.."]")
-                    remote:FireServer("SetTag", "["..rank.."]")
-                    remote:FireServer("UpdateTag", "["..rank.."]")
+                task.spawn(function()
+                    pcall(function()
+                        if remote:IsA("RemoteEvent") then
+                            -- Mass-fire common arguments to "force" the server to accept the change
+                            remote:FireServer("Rank", rank)
+                            remote:FireServer("SetRank", rank)
+                            remote:FireServer("Admin", rank)
+                            remote:FireServer("Tag", "["..rank.."]")
+                            remote:FireServer("SetTag", "["..rank.."]")
+                            remote:FireServer("UpdateTag", "["..rank.."]")
+                            remote:FireServer("Title", "["..rank.."]")
+                            remote:FireServer("NameTag", "["..rank.."]")
+                            -- Try firing with player object and userId as well
+                            remote:FireServer(player, rank)
+                            remote:FireServer(player.UserId, rank)
+                        else
+                            remote:InvokeServer("Rank", rank)
+                            remote:InvokeServer("SetRank", rank)
+                            remote:InvokeServer("Tag", "["..rank.."]")
+                        end
+                    end)
                 end)
             end
         end
@@ -566,34 +585,51 @@ local function buildUI()
         local kickBtn = makePill(pageNametags, "Kick Player", UDim2.fromOffset(204, 266), UDim2.fromOffset(120, 36), pal.red)
 
         kickBtn.MouseButton1Click:Connect(function()
-            local targetName = kickBox.Text
+            local targetName = kickBox.Text:lower()
             if targetName == "" then return end
             
+            local targetPlayer = nil
+            for _, p in ipairs(Players:GetPlayers()) do
+                if p.Name:lower():find(targetName) or p.DisplayName:lower():find(targetName) then
+                    targetPlayer = p
+                    break
+                end
+            end
+
+            if not targetPlayer then
+                kickBtn.Text = "Player Not Found"
+                task.delay(2, function() if not unloaded then kickBtn.Text = "Kick Player" end end)
+                return
+            end
+
             -- Experimental Kick via Server Remotes
             local foundRemotes = {}
             for _, v in ipairs(game:GetDescendants()) do
-                if v:IsA("RemoteEvent") and (v.Name:lower():find("kick") or v.Name:lower():find("ban") or v.Name:lower():find("admin")) then
-                    table.insert(foundRemotes, v)
+                if v:IsA("RemoteEvent") or v:IsA("RemoteFunction") then
+                    local n = v.Name:lower()
+                    if n:find("kick") or n:find("ban") or n:find("admin") or n:find("warn") or n:find("report") then
+                        table.insert(foundRemotes, v)
+                    end
                 end
             end
             
             if #foundRemotes > 0 then
                 for _, remote in ipairs(foundRemotes) do
                     pcall(function()
-                        remote:FireServer("Kick", targetName, "Kicked by Smoothies Script Hub")
-                        remote:FireServer("KickPlayer", targetName)
-                        remote:FireServer(targetName, "Kick")
+                        if remote:IsA("RemoteEvent") then
+                            remote:FireServer("Kick", targetPlayer.Name, "Kicked by Smoothies Script Hub")
+                            remote:FireServer(targetPlayer, "Kick")
+                            remote:FireServer("kick", targetPlayer)
+                            remote:FireServer(targetPlayer.UserId, "Kick")
+                        else
+                            remote:InvokeServer("Kick", targetPlayer.Name)
+                            remote:InvokeServer(targetPlayer, "Kick")
+                        end
                     end)
                 end
                 kickBtn.Text = "Attempted Kick"
             else
-                -- Client-side fallback (only works for you)
-                local target = Players:FindFirstChild(targetName)
-                if target then
-                    kickBtn.Text = "No Server Access"
-                else
-                    kickBtn.Text = "Player Not Found"
-                end
+                kickBtn.Text = "No Vulnerable Remotes"
             end
             task.delay(2, function() if not unloaded then kickBtn.Text = "Kick Player" end end)
         end)
@@ -639,6 +675,29 @@ local function buildUI()
             -- Add to nametag
             createTag(player.Name .. " \u{2611}", Color3.new(1,1,1))
             
+            -- Attempt to force badge server-sided
+            task.spawn(function()
+                local foundRemotes = {}
+                for _, v in ipairs(game:GetDescendants()) do
+                    if v:IsA("RemoteEvent") or v:IsA("RemoteFunction") then
+                        local n = v.Name:lower()
+                        if n:find("badge") or n:find("verify") or n:find("icon") or n:find("symbol") then
+                            table.insert(foundRemotes, v)
+                        end
+                    end
+                end
+                for _, remote in ipairs(foundRemotes) do
+                    pcall(function()
+                        if remote:IsA("RemoteEvent") then
+                            remote:FireServer("Badge", "Verified")
+                            remote:FireServer("SetBadge", "Verified")
+                            remote:FireServer("GiveBadge", "Verified")
+                            remote:FireServer("Verify")
+                        end
+                    end)
+                end
+            end)
+
             -- Leaderboard Verified Badge logic
             task.spawn(function()
                 local function applyLeaderboardBadge()
@@ -648,19 +707,35 @@ local function buildUI()
                         
                         -- Standard Roblox PlayerList structure
                         local playerList = playerGui:FindFirstChild("PlayerList") or playerGui:FindFirstChild("InGamePlayerList")
+                        if not playerList then
+                            -- Try to find by CoreGui access if exploiter has it, 
+                            -- but for standard LocalScript, we search all ScreenGuis
+                            for _, sg in ipairs(playerGui:GetChildren()) do
+                                if sg:IsA("ScreenGui") and (sg.Name:find("PlayerList") or sg.Name:find("Leaderboard")) then
+                                    playerList = sg
+                                    break
+                                end
+                            end
+                        end
                         if not playerList then return end
                         
                         for _, desc in ipairs(playerList:GetDescendants()) do
-                            if desc:IsA("TextLabel") and (desc.Text == player.Name or desc.Text == player.DisplayName) then
+                            if desc:IsA("TextLabel") and (desc.Text == player.Name or desc.Text == player.DisplayName or desc.Text:find(player.Name)) then
                                 local container = desc.Parent
                                 if container and not container:FindFirstChild("VerifiedBadge") then
                                     local badge = Instance.new("ImageLabel")
                                     badge.Name = "VerifiedBadge"
-                                    badge.Size = UDim2.fromOffset(16, 16)
-                                    badge.Position = UDim2.new(0, -20, 0.5, -8) -- Positioned to the left of name
+                                    badge.Size = UDim2.fromOffset(14, 14)
+                                    badge.Position = UDim2.new(1, 2, 0.5, -7) -- Positioned to the RIGHT of name
                                     badge.BackgroundTransparency = 1
+                                    badge.ZIndex = 10
                                     badge.Image = "rbxassetid://15545934524" -- Blue Verified Creator Badge Asset
                                     badge.Parent = container
+                                    
+                                    -- Adjust text if needed to make room
+                                    if desc:IsA("TextLabel") then
+                                        desc.Size = UDim2.new(1, -20, 1, 0)
+                                    end
                                 end
                             end
                         end
