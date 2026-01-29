@@ -1058,37 +1058,50 @@ task.delay(LOAD_SECONDS, function()
 	fade:Play(); fade.Completed:Wait(); loader:Destroy()
 	buildUI()
 end)
--- invisibility toggle
-local invisEnabled = false
-local origTransparency = {} -- stores original transparency of parts
+-- invisibility toggle setup
+do
+    local invisEnabled = false
+    local origTransparency = {} -- store original part transparency
 
-local function applyInvisibility(enable: boolean)
-    local char = getCharacter()
-    if not char then return end
-    for _, part in ipairs(char:GetDescendants()) do
-        if part:IsA("BasePart") then
-            if enable then
-                if origTransparency[part] == nil then
-                    origTransparency[part] = part.Transparency
+    local function applyInvisibility(enable: boolean)
+        local char = getCharacter()
+        if not char then return end
+        for _, part in ipairs(char:GetDescendants()) do
+            if part:IsA("BasePart") then
+                if enable then
+                    if origTransparency[part] == nil then
+                        origTransparency[part] = part.Transparency
+                    end
+                    part.Transparency = 1
+                else
+                    if origTransparency[part] ~= nil then
+                        part.Transparency = origTransparency[part]
+                        origTransparency[part] = nil
+                    end
                 end
-                part.Transparency = 1
-            else
-                if origTransparency[part] ~= nil then
-                    part.Transparency = origTransparency[part]
-                    origTransparency[part] = nil
-                end
+            elseif part:IsA("Decal") or part:IsA("Texture") then
+                part.Transparency = enable and 1 or 0
             end
-        elseif part:IsA("Decal") or part:IsA("Texture") then
-            part.Transparency = enable and 1 or 0
         end
+        invisEnabled = enable
     end
-    invisEnabled = enable
-end
 
--- create invisibility toggle button
-local invisBtn = makePill(pageMovement, "Invisibility: OFF", UDim2.fromOffset(14, 420), UDim2.fromOffset(180, 34), pal.grayBtn)
-invisBtn.MouseButton1Click:Connect(function()
-    applyInvisibility(not invisEnabled)
-    invisBtn.Text = "Invisibility: " .. (invisEnabled and "ON" or "OFF")
-    invisBtn.BackgroundColor3 = invisEnabled and Color3.fromRGB(60,130,90) or pal.grayBtn
-end)
+    -- only create button if pageMovement exists
+    if pageMovement then
+        local invisBtn = makePill(pageMovement, "Invisibility: OFF", UDim2.fromOffset(14, 420), UDim2.fromOffset(180, 34), pal.grayBtn)
+        invisBtn.MouseButton1Click:Connect(function()
+            applyInvisibility(not invisEnabled)
+            invisBtn.Text = "Invisibility: " .. (invisEnabled and "ON" or "OFF")
+            invisBtn.BackgroundColor3 = invisEnabled and Color3.fromRGB(60,130,90) or pal.grayBtn
+        end)
+    end
+
+    -- restore invisibility on respawn
+    player.CharacterAdded:Connect(function()
+        task.defer(function()
+            if invisEnabled then
+                applyInvisibility(true)
+            end
+        end)
+    end)
+end
