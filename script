@@ -236,6 +236,71 @@ task.spawn(function()
     end
 end)
 
+-- Main UI Construction
+local function buildMainUI()
+    local mainFrame = Instance.new("Frame")
+    mainFrame.Name = "MainFrame"
+    mainFrame.Size = UDim2.fromOffset(550, 350)
+    mainFrame.AnchorPoint = Vector2.new(0.5, 0.5)
+    mainFrame.Position = UDim2.fromScale(0.5, 0.5)
+    mainFrame.BackgroundColor3 = pal.bg
+    mainFrame.BorderSizePixel = 0
+    mainFrame.Parent = gui
+    mainFrame.Active = true
+    mainFrame.Draggable = true -- Simple draggable support
+    
+    addCorner(mainFrame, 10)
+    addStroke(mainFrame, 1, pal.stroke)
+
+    -- Header
+    local header = Instance.new("Frame")
+    header.Name = "Header"
+    header.BackgroundColor3 = pal.header
+    header.Size = UDim2.new(1, 0, 0, 40)
+    header.BorderSizePixel = 0
+    header.Parent = mainFrame
+    
+    local headerCorner = Instance.new("UICorner")
+    headerCorner.CornerRadius = UDim.new(0, 10)
+    headerCorner.Parent = header
+    
+    -- Cover bottom corners of header to make it look like a top bar
+    local cover = Instance.new("Frame")
+    cover.BorderSizePixel = 0
+    cover.BackgroundColor3 = pal.header
+    cover.Size = UDim2.new(1, 0, 0, 10)
+    cover.Position = UDim2.new(0, 0, 1, -10)
+    cover.Parent = header
+
+    local titleLabel = createLabel(header, "Smoothies Hub", 18, true, UDim2.fromOffset(15, 0), pal.accent)
+    titleLabel.Size = UDim2.new(0.5, 0, 1, 0)
+    titleLabel.TextYAlignment = Enum.TextYAlignment.Center
+    
+    -- Content container
+    local container = Instance.new("Frame")
+    container.BackgroundColor3 = pal.panel
+    container.Size = UDim2.new(1, -20, 1, -60)
+    container.Position = UDim2.new(0, 10, 0, 50)
+    container.Parent = mainFrame
+    addCorner(container, 8)
+    
+    createLabel(container, "Welcome to Smoothies Hub!", 16, false, UDim2.fromScale(0.05, 0.1), pal.text)
+    createLabel(container, "Press '-' to Toggle UI", 14, false, UDim2.fromScale(0.05, 0.25), pal.textDim)
+    createLabel(container, "Press 'X' to Unload", 14, false, UDim2.fromScale(0.05, 0.35), pal.textDim)
+
+    -- Toggle Logic
+    UIS.InputBegan:Connect(function(input, gameProcessed)
+        if gameProcessed then return end
+        if input.KeyCode == Enum.KeyCode.Minus then
+            minimized = not minimized
+            mainFrame.Visible = not minimized
+        elseif input.KeyCode == Enum.KeyCode.X then
+            unloaded = true
+            gui:Destroy()
+        end
+    end)
+end
+
 -- Wait for loader to finish then build UI
 task.wait(LOAD_SECONDS + 0.1) -- Slightly longer than tween to ensure completion
 if loader.Parent then loader:Destroy() end
