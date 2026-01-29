@@ -240,63 +240,199 @@ end)
 local function buildMainUI()
     local mainFrame = Instance.new("Frame")
     mainFrame.Name = "MainFrame"
-    mainFrame.Size = UDim2.fromOffset(550, 350)
+    mainFrame.Size = UDim2.fromOffset(580, 420)
     mainFrame.AnchorPoint = Vector2.new(0.5, 0.5)
     mainFrame.Position = UDim2.fromScale(0.5, 0.5)
     mainFrame.BackgroundColor3 = pal.bg
     mainFrame.BorderSizePixel = 0
     mainFrame.Parent = gui
     mainFrame.Active = true
-    mainFrame.Draggable = true -- Simple draggable support
+    mainFrame.Draggable = true
     
     addCorner(mainFrame, 10)
     addStroke(mainFrame, 1, pal.stroke)
 
-    -- Header
-    local header = Instance.new("Frame")
-    header.Name = "Header"
-    header.BackgroundColor3 = pal.header
-    header.Size = UDim2.new(1, 0, 0, 40)
-    header.BorderSizePixel = 0
-    header.Parent = mainFrame
+    -- Sidebar
+    local sidebar = Instance.new("Frame")
+    sidebar.Name = "Sidebar"
+    sidebar.BackgroundColor3 = pal.sidebar
+    sidebar.Size = UDim2.new(0, 160, 1, 0)
+    sidebar.BorderSizePixel = 0
+    sidebar.Parent = mainFrame
+    addCorner(sidebar, 10)
     
-    local headerCorner = Instance.new("UICorner")
-    headerCorner.CornerRadius = UDim.new(0, 10)
-    headerCorner.Parent = header
-    
-    -- Cover bottom corners of header to make it look like a top bar
-    local cover = Instance.new("Frame")
-    cover.BorderSizePixel = 0
-    cover.BackgroundColor3 = pal.header
-    cover.Size = UDim2.new(1, 0, 0, 10)
-    cover.Position = UDim2.new(0, 0, 1, -10)
-    cover.Parent = header
+    -- Fix sidebar corners
+    local sbCover = Instance.new("Frame")
+    sbCover.Size = UDim2.new(0, 20, 1, 0)
+    sbCover.Position = UDim2.new(1, -20, 0, 0)
+    sbCover.BackgroundColor3 = pal.sidebar
+    sbCover.BorderSizePixel = 0
+    sbCover.Parent = sidebar
 
-    local titleLabel = createLabel(header, "Smoothies Hub", 18, true, UDim2.fromOffset(15, 0), pal.accent)
-    titleLabel.Size = UDim2.new(0.5, 0, 1, 0)
-    titleLabel.TextYAlignment = Enum.TextYAlignment.Center
+    local logo = createLabel(sidebar, "SMOOTHIES", 18, true, UDim2.fromOffset(15, 20), pal.accent)
     
-    -- Content container
-    local container = Instance.new("Frame")
-    container.BackgroundColor3 = pal.panel
-    container.Size = UDim2.new(1, -20, 1, -60)
-    container.Position = UDim2.new(0, 10, 0, 50)
-    container.Parent = mainFrame
-    addCorner(container, 8)
+    -- Tabs container
+    local tabContainer = Instance.new("Frame")
+    tabContainer.Name = "Tabs"
+    tabContainer.BackgroundTransparency = 1
+    tabContainer.Size = UDim2.new(1, 0, 1, -60)
+    tabContainer.Position = UDim2.fromOffset(0, 60)
+    tabContainer.Parent = sidebar
     
-    createLabel(container, "Welcome to Smoothies Hub!", 16, false, UDim2.fromScale(0.05, 0.1), pal.text)
-    createLabel(container, "Press '-' to Toggle UI", 14, false, UDim2.fromScale(0.05, 0.25), pal.textDim)
-    createLabel(container, "Press 'X' to Unload", 14, false, UDim2.fromScale(0.05, 0.35), pal.textDim)
+    local tabLayout = Instance.new("UIListLayout")
+    tabLayout.Padding = UDim.new(0, 5)
+    tabLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+    tabLayout.Parent = tabContainer
 
-    -- Toggle Logic
+    -- Content Area
+    local content = Instance.new("Frame")
+    content.Name = "Content"
+    content.BackgroundColor3 = pal.panel
+    content.Size = UDim2.new(1, -170, 1, -50)
+    content.Position = UDim2.fromOffset(165, 45)
+    content.Parent = mainFrame
+    addCorner(content, 8)
+    
+    local header = createLabel(mainFrame, "Dashboard", 20, true, UDim2.fromOffset(175, 15), pal.text)
+
+    -- Tab Pages
+    local pages = {}
+    local function createPage(name)
+        local page = Instance.new("ScrollingFrame")
+        page.Name = name .. "Page"
+        page.Size = UDim2.new(1, -10, 1, -10)
+        page.Position = UDim2.fromOffset(5, 5)
+        page.BackgroundTransparency = 1
+        page.ScrollBarThickness = 2
+        page.Visible = false
+        page.Parent = content
+        
+        local layout = Instance.new("UIListLayout")
+        layout.Padding = UDim.new(0, 8)
+        layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+        layout.Parent = page
+        
+        pages[name] = page
+        return page
+    end
+
+    local playerPage = createPage("Player")
+    local visualsPage = createPage("Visuals")
+    local worldPage = createPage("World")
+    local settingsPage = createPage("Settings")
+
+    -- Populate Player Page
+    local function createToggle(parent, text, default, callback)
+        local container = Instance.new("Frame")
+        container.Size = UDim2.new(1, -20, 0, 35)
+        container.BackgroundColor3 = pal.button
+        container.Parent = parent
+        addCorner(container, 6)
+        
+        local label = createLabel(container, text, 14, false, UDim2.fromOffset(10, 0), pal.text)
+        label.Size = UDim2.new(0.6, 0, 1, 0)
+        label.TextYAlignment = Enum.TextYAlignment.Center
+        
+        local state = default
+        local btn = createButton(container, state and "ON" or "OFF", UDim2.fromOffset(60, 25), UDim2.new(1, -70, 0.5, -12), state and pal.success or pal.danger)
+        
+        btn.MouseButton1Click:Connect(function()
+            state = not state
+            btn.Text = state and "ON" or "OFF"
+            btn.BackgroundColor3 = state and pal.success or pal.danger
+            callback(state)
+        end)
+    end
+
+    local function createSlider(parent, text, min, max, default, callback)
+        local container = Instance.new("Frame")
+        container.Size = UDim2.new(1, -20, 0, 50)
+        container.BackgroundColor3 = pal.button
+        container.Parent = parent
+        addCorner(container, 6)
+        
+        local label = createLabel(container, text .. ": " .. default, 14, false, UDim2.fromOffset(10, 5), pal.text)
+        
+        local bar = Instance.new("Frame")
+        bar.Size = UDim2.new(1, -20, 0, 4)
+        bar.Position = UDim2.fromOffset(10, 35)
+        bar.BackgroundColor3 = pal.sidebar
+        bar.Parent = container
+        addCorner(bar, 2)
+        
+        local fillBar = Instance.new("Frame")
+        fillBar.Size = UDim2.fromScale((default-min)/(max-min), 1)
+        fillBar.BackgroundColor3 = pal.accent
+        fillBar.Parent = bar
+        addCorner(fillBar, 2)
+        
+        local trigger = Instance.new("TextButton")
+        trigger.Size = UDim2.fromScale(1, 1)
+        trigger.BackgroundTransparency = 1
+        trigger.Text = ""
+        trigger.Parent = bar
+        
+        local function update(input)
+            local pos = math.clamp((input.Position.X - bar.AbsolutePosition.X) / bar.AbsoluteSize.X, 0, 1)
+            local val = math.floor(min + (max - min) * pos)
+            fillBar.Size = UDim2.fromScale(pos, 1)
+            label.Text = text .. ": " .. val
+            callback(val)
+        end
+        
+        local dragging = false
+        trigger.InputBegan:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1 then dragging = true update(input) end
+        end)
+        UIS.InputEnded:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1 then dragging = false end
+        end)
+        UIS.InputChanged:Connect(function(input)
+            if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then update(input) end
+        end)
+    end
+
+    createSlider(playerPage, "WalkSpeed", SPEED_MIN, SPEED_MAX, SPEED_DEFAULT, function(v) getHumanoid().WalkSpeed = v end)
+    createSlider(playerPage, "JumpPower", JUMP_MIN, JUMP_MAX, JUMP_DEFAULT, function(v) getHumanoid().JumpPower = v end)
+    createToggle(playerPage, "Fly Mode", false, function(v) flyEnabled = v --[[ Fly logic here ]] end)
+    createToggle(playerPage, "Noclip", false, function(v) noclipEnabled = v end)
+
+    createToggle(visualsPage, "ESP Box", false, function(v) --[[ ESP logic ]] end)
+    createToggle(visualsPage, "Tracers", false, function(v) --[[ Tracer logic ]] end)
+
+    createButton(worldPage, "Infinite Yield", UDim2.new(1, -20, 0, 35), UDim2.fromOffset(10, 0), pal.button):MouseButton1Click:Connect(function()
+        loadstring(game:HttpGet("https://raw.githubusercontent.com/EdgeIY/infiniteyield/master/source"))()
+    end)
+    
+    createButton(settingsPage, "Copy Discord Link", UDim2.new(1, -20, 0, 35), UDim2.fromOffset(10, 0), pal.button):MouseButton1Click:Connect(function()
+        setclipboard(DISCORD_INVITE)
+    end)
+    createButton(settingsPage, "Unload Script", UDim2.new(1, -20, 0, 35), UDim2.fromOffset(10, 45), pal.danger):MouseButton1Click:Connect(function()
+        unloaded = true
+        gui:Destroy()
+    end)
+
+    -- Tab Switching
+    local currentTab = "Player"
+    local function setTab(name)
+        for n, p in pairs(pages) do p.Visible = (n == name) end
+        header.Text = name
+        currentTab = name
+    end
+
+    for _, name in ipairs({"Player", "Visuals", "World", "Settings"}) do
+        local btn = createButton(tabContainer, name, UDim2.new(0.9, 0, 0, 35), UDim2.new(0,0,0,0))
+        btn.MouseButton1Click:Connect(function() setTab(name) end)
+    end
+
+    setTab("Player")
+
+    -- Global Toggle
     UIS.InputBegan:Connect(function(input, gameProcessed)
         if gameProcessed then return end
         if input.KeyCode == Enum.KeyCode.Minus then
             minimized = not minimized
             mainFrame.Visible = not minimized
-        elseif input.KeyCode == Enum.KeyCode.X then
-            unloaded = true
-            gui:Destroy()
         end
     end)
 end
