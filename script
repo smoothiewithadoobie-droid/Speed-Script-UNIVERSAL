@@ -119,6 +119,7 @@ gui.Name = "SmoothiesHub_Modern"
 gui.IgnoreGuiInset = true
 gui.ResetOnSpawn = false
 gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+gui.DisplayOrder = 10 -- Ensure it's on top
 gui.Parent = player:WaitForChild("PlayerGui")
 
 -- Helper: Add rounded corners
@@ -427,6 +428,10 @@ local function buildMainUI()
 
     setTab("Player")
 
+    -- Ensure visibility
+    mainFrame.Visible = true
+    gui.Enabled = true
+
     -- Global Toggle
     UIS.InputBegan:Connect(function(input, gameProcessed)
         if gameProcessed then return end
@@ -438,7 +443,7 @@ local function buildMainUI()
 end
 
 -- Wait for loader to finish then build UI
-task.wait(LOAD_SECONDS + 0.1) -- Slightly longer than tween to ensure completion
+task.wait(LOAD_SECONDS + 0.1)
 if loader.Parent then loader:Destroy() end
 buildMainUI()
 
