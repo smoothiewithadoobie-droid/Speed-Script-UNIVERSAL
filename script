@@ -41,6 +41,7 @@ local state = {
     unloaded = false,
     noclip = false,
     fly = false,
+    invis = false,
     flySpeed = 60,
     walkSpeed = 16,
     jumpPower = 50,
@@ -48,14 +49,20 @@ local state = {
     keybinds = {
         Noclip = Enum.KeyCode.X,
         Fly = Enum.KeyCode.G,
-        Teleport = Enum.KeyCode.F
+        Teleport = Enum.KeyCode.F,
+        Invis = Enum.KeyCode.V,
+        WalkSpeed = Enum.KeyCode.B,
+        JumpPower = Enum.KeyCode.N
     },
-    listening = nil
+    listening = nil,
+    wsEnabled = false,
+    jpEnabled = false
 }
 
 local connections = {}
 local highlights = {}
 local flyObjects = {}
+local invisStorage = {}
 
 ----------------------------------------------------------------
 -- Helpers
@@ -139,6 +146,41 @@ local function teleportToMouse()
     end
 end
 
+local function toggleInvis(v)
+    state.invis = v
+    local char = getChar()
+    if v then
+        for _, part in pairs(char:GetDescendants()) do
+            if part:IsA("BasePart") or part:IsA("Decal") then
+                invisStorage[part] = part.Transparency
+                part.Transparency = 1
+            end
+        end
+    else
+        for part, trans in pairs(invisStorage) do
+            if part and part.Parent then
+                part.Transparency = trans
+            end
+        end
+        table.clear(invisStorage)
+    end
+end
+
+local function updateWalkSpeed()
+    local hum = getHum()
+    if hum then
+        hum.WalkSpeed = state.wsEnabled and state.walkSpeed or 16
+    end
+end
+
+local function updateJumpPower()
+    local hum = getHum()
+    if hum then
+        hum.UseJumpPower = true
+        hum.JumpPower = state.jpEnabled and state.jumpPower or 50
+    end
+end
+
 ----------------------------------------------------------------
 -- UI Construction
 ----------------------------------------------------------------
@@ -156,8 +198,62 @@ main.Parent = gui
 addCorner(main, 10)
 addStroke(main, pal.stroke, 1)
 
+-- Control Buttons (Minimize & Exit)
+local controls = Instance.new("Frame")
+controls.Size = UDim2.fromOffset(100, 40)
+controls.Position = UDim2.new(1, -110, 0, 10)
+controls.BackgroundTransparency = 1
+controls.ZIndex = 5
+controls.Parent = main
+
+local closeBtn = Instance.new("TextButton")
+closeBtn.Size = UDim2.fromOffset(40, 40)
+closeBtn.Position = UDim2.new(1, -40, 0, 0)
+closeBtn.BackgroundColor3 = pal.danger
+closeBtn.Text = "X"
+closeBtn.Font = Enum.Font.GothamBold
+closeBtn.TextColor3 = pal.text
+closeBtn.TextSize = 20
+closeBtn.Parent = controls
+addCorner(closeBtn, 8)
+
+closeBtn.MouseButton1Click:Connect(function()
+    gui:Destroy()
+end)
+
+local minBtn = Instance.new("TextButton")
+minBtn.Size = UDim2.fromOffset(40, 40)
+minBtn.Position = UDim2.new(0, 0, 0, 0)
+minBtn.BackgroundColor3 = pal.button
+minBtn.Text = "-"
+minBtn.Font = Enum.Font.GothamBold
+minBtn.TextColor3 = pal.text
+minBtn.TextSize = 24
+minBtn.Parent = controls
+addCorner(minBtn, 8)
+
+minBtn.MouseButton1Click:Connect(function()
+    state.minimized = not state.minimized
+    
+    local targetSize = state.minimized and UDim2.fromOffset(600, 60) or UDim2.fromOffset(600, 400)
+    TweenService:Create(main, TweenInfo.new(0.3), {Size = targetSize}):Play()
+    
+    for _, v in pairs(main:GetChildren()) do
+        if v.Name ~= "Sidebar" and v ~= controls then
+            v.Visible = not state.minimized
+        end
+    end
+    
+    local sb = main:FindFirstChild("Sidebar")
+    if sb then
+        TweenService:Create(sb, TweenInfo.new(0.3), {Size = state.minimized and UDim2.new(0, 150, 0, 60) or UDim2.new(0, 150, 1, 0)}):Play()
+        local bh = sb:FindFirstChild("btnHolder")
+        if bh then bh.Visible = not state.minimized end
+    end
+end)
+
 -- Dragging
-local dragging, dragInput, dragStart, startPos
+local dragging, dragStart, startPos
 main.InputBegan:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1 then
         dragging = true
@@ -177,6 +273,7 @@ end)
 
 -- Sidebar
 local sidebar = Instance.new("Frame")
+sidebar.Name = "Sidebar"
 sidebar.Size = UDim2.new(0, 150, 1, 0)
 sidebar.BackgroundColor3 = pal.sidebar
 sidebar.Parent = main
@@ -186,64 +283,22 @@ local titleLabel = Instance.new("TextLabel")
 titleLabel.Text = "Smoothies Hub"
 titleLabel.Font = Enum.Font.GothamBold
 titleLabel.TextColor3 = pal.accent
-titleLabel.TextSize = 20
-titleLabel.Size = UDim2.new(1, 0, 0, 50)
+titleLabel.TextSize = 22
+titleLabel.Size = UDim2.new(1, 0, 0, 60)
 titleLabel.BackgroundTransparency = 1
 titleLabel.Parent = sidebar
 
 local btnHolder = Instance.new("Frame")
-btnHolder.Size = UDim2.new(1, 0, 1, -60)
-btnHolder.Position = UDim2.fromOffset(0, 60)
+btnHolder.Name = "btnHolder"
+btnHolder.Size = UDim2.new(1, 0, 1, -70)
+btnHolder.Position = UDim2.fromOffset(0, 70)
 btnHolder.BackgroundTransparency = 1
 btnHolder.Parent = sidebar
 
 local layout = Instance.new("UIListLayout")
-layout.Padding = UDim.new(0, 5)
+layout.Padding = UDim.new(0, 8)
 layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
 layout.Parent = btnHolder
-
--- Control Buttons
-local controls = Instance.new("Frame")
-controls.Size = UDim2.new(0, 80, 0, 30)
-controls.Position = UDim2.new(1, -85, 0, 10)
-controls.BackgroundTransparency = 1
-controls.Parent = main
-
-local closeBtn = Instance.new("TextButton")
-closeBtn.Size = UDim2.new(0, 30, 0, 30)
-closeBtn.Position = UDim2.new(1, -30, 0, 0)
-closeBtn.BackgroundColor3 = pal.danger
-closeBtn.Text = "X"
-closeBtn.Font = Enum.Font.GothamBold
-closeBtn.TextColor3 = pal.text
-closeBtn.TextSize = 16
-closeBtn.Parent = controls
-addCorner(closeBtn, 6)
-
-closeBtn.MouseButton1Click:Connect(function()
-    gui:Destroy()
-end)
-
-local minBtn = Instance.new("TextButton")
-minBtn.Size = UDim2.new(0, 30, 0, 30)
-minBtn.Position = UDim2.new(0, 10, 0, 0)
-minBtn.BackgroundColor3 = pal.button
-minBtn.Text = "-"
-minBtn.Font = Enum.Font.GothamBold
-minBtn.TextColor3 = pal.text
-minBtn.TextSize = 20
-minBtn.Parent = controls
-addCorner(minBtn, 6)
-
-minBtn.MouseButton1Click:Connect(function()
-    state.minimized = not state.minimized
-    main.Size = state.minimized and UDim2.fromOffset(600, 50) or UDim2.fromOffset(600, 400)
-    for _, v in pairs(main:GetChildren()) do
-        if v.Name ~= "Sidebar" and v ~= controls then
-            v.Visible = not state.minimized
-        end
-    end
-end)
 
 -- Container
 local container = Instance.new("Frame")
@@ -264,7 +319,7 @@ local function createPage(name)
     p.Parent = container
     
     local l = Instance.new("UIListLayout")
-    l.Padding = UDim.new(0, 10)
+    l.Padding = UDim.new(0, 12)
     l.HorizontalAlignment = Enum.HorizontalAlignment.Center
     l.Parent = p
     
@@ -278,12 +333,12 @@ end
 
 local function createTabBtn(name)
     local btn = Instance.new("TextButton")
-    btn.Size = UDim2.new(0.9, 0, 0, 35)
+    btn.Size = UDim2.new(0.9, 0, 0, 40)
     btn.BackgroundColor3 = pal.button
     btn.Text = name
     btn.Font = Enum.Font.GothamMedium
     btn.TextColor3 = pal.text
-    btn.TextSize = 16
+    btn.TextSize = 18
     btn.Parent = btnHolder
     addCorner(btn, 6)
     
@@ -296,22 +351,22 @@ local welcome = Instance.new("TextLabel")
 welcome.Text = "Thanks for using Smoothies Hub!"
 welcome.Font = Enum.Font.GothamBold
 welcome.TextColor3 = pal.text
-welcome.TextSize = 20
-welcome.Size = UDim2.new(1, 0, 0, 30)
+welcome.TextSize = 22
+welcome.Size = UDim2.new(1, 0, 0, 40)
 welcome.BackgroundTransparency = 1
 welcome.Parent = mainPage
 
 local charImg = Instance.new("ImageLabel")
-charImg.Size = UDim2.fromOffset(120, 120)
+charImg.Size = UDim2.fromOffset(140, 140)
 charImg.BackgroundColor3 = pal.button
 charImg.Image = "rbxthumb://type=AvatarHeadShot&id=" .. player.UserId .. "&w=150&h=150"
 charImg.Parent = mainPage
-addCorner(charImg, 60)
+addCorner(charImg, 70)
 
 local stats = Instance.new("TextLabel")
-stats.Size = UDim2.new(1, 0, 0, 50)
+stats.Size = UDim2.new(1, 0, 0, 60)
 stats.TextColor3 = pal.textDim
-stats.TextSize = 16
+stats.TextSize = 18
 stats.Font = Enum.Font.Gotham
 stats.BackgroundTransparency = 1
 stats.Parent = mainPage
@@ -331,10 +386,10 @@ local toggles = {}
 
 local function createToggle(parent, text, featureName, default, callback)
     local frame = Instance.new("Frame")
-    frame.Size = UDim2.new(0.9, 0, 0, 50)
+    frame.Size = UDim2.new(0.9, 0, 0, 60)
     frame.BackgroundColor3 = pal.button
     frame.Parent = parent
-    addCorner(frame, 6)
+    addCorner(frame, 8)
 
     local btn = Instance.new("TextButton")
     btn.Size = UDim2.new(0.6, 0, 1, 0)
@@ -342,9 +397,9 @@ local function createToggle(parent, text, featureName, default, callback)
     btn.Text = text .. " [" .. (default and "ON" or "OFF") .. "]"
     btn.Font = Enum.Font.GothamMedium
     btn.TextColor3 = pal.text
-    btn.TextSize = 16
+    btn.TextSize = 18
     btn.Parent = frame
-    addCorner(btn, 6)
+    addCorner(btn, 8)
     
     local keyBtn = Instance.new("TextButton")
     keyBtn.Size = UDim2.new(0.35, 0, 1, 0)
@@ -353,15 +408,16 @@ local function createToggle(parent, text, featureName, default, callback)
     keyBtn.Text = state.keybinds[featureName].Name
     keyBtn.Font = Enum.Font.Gotham
     keyBtn.TextColor3 = pal.accent
-    keyBtn.TextSize = 14
+    keyBtn.TextSize = 16
     keyBtn.Parent = frame
-    addCorner(keyBtn, 6)
+    addCorner(keyBtn, 8)
 
     local function toggle()
-        state[featureName:lower()] = not state[featureName:lower()]
-        btn.BackgroundColor3 = state[featureName:lower()] and pal.success or pal.danger
-        btn.Text = text .. " [" .. (state[featureName:lower()] and "ON" or "OFF") .. "]"
-        callback(state[featureName:lower()])
+        local featureKey = featureName:lower() == "invis" and "invis" or featureName:lower() == "walkspeed" and "wsEnabled" or featureName:lower() == "jumppower" and "jpEnabled" or featureName:lower()
+        state[featureKey] = not state[featureKey]
+        btn.BackgroundColor3 = state[featureKey] and pal.success or pal.danger
+        btn.Text = text .. " [" .. (state[featureKey] and "ON" or "OFF") .. "]"
+        callback(state[featureKey])
     end
 
     btn.MouseButton1Click:Connect(toggle)
@@ -371,17 +427,119 @@ local function createToggle(parent, text, featureName, default, callback)
         state.listening = featureName
     end)
 
-    toggles[featureName] = {Toggle = toggle, KeyBtn = keyBtn}
+    toggles[featureName] = {Toggle = toggle, KeyBtn = keyBtn, Btn = btn}
+end
+
+local function createSlider(parent, text, min, max, default, callback)
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(0.9, 0, 0, 60)
+    frame.BackgroundColor3 = pal.button
+    frame.Parent = parent
+    addCorner(frame, 8)
+
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(1, 0, 0.5, 0)
+    label.BackgroundTransparency = 1
+    label.Text = text .. ": " .. default
+    label.Font = Enum.Font.Gotham
+    label.TextColor3 = pal.text
+    label.TextSize = 16
+    label.Parent = frame
+
+    local sliderBg = Instance.new("Frame")
+    sliderBg.Size = UDim2.new(0.8, 0, 0.2, 0)
+    sliderBg.Position = UDim2.fromScale(0.1, 0.7)
+    sliderBg.BackgroundColor3 = pal.sidebar
+    sliderBg.Parent = frame
+    addCorner(sliderBg, 4)
+
+    local fill = Instance.new("Frame")
+    fill.Size = UDim2.fromScale((default-min)/(max-min), 1)
+    fill.BackgroundColor3 = pal.accent
+    fill.Parent = sliderBg
+    addCorner(fill, 4)
+
+    local trigger = Instance.new("TextButton")
+    trigger.Size = UDim2.fromScale(1, 1)
+    trigger.BackgroundTransparency = 1
+    trigger.Text = ""
+    trigger.Parent = sliderBg
+
+    local function update(input)
+        local pos = math.clamp((input.Position.X - sliderBg.AbsolutePosition.X) / sliderBg.AbsoluteSize.X, 0, 1)
+        local val = math.floor(min + (max - min) * pos)
+        fill.Size = UDim2.fromScale(pos, 1)
+        label.Text = text .. ": " .. val
+        callback(val)
+    end
+
+    local dragging = false
+    trigger.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then dragging = true update(input) end
+    end)
+    UIS.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then dragging = false end
+    end)
+    UIS.InputChanged:Connect(function(input)
+        if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then update(input) end
+    end)
+
+    return {Fill = fill, Label = label}
 end
 
 createToggle(featPage, "Noclip", "Noclip", false, toggleNoclip)
 createToggle(featPage, "Fly", "Fly", false, toggleFly)
+createToggle(featPage, "Invisibility", "Invis", false, toggleInvis)
+
+createToggle(featPage, "WalkSpeed Toggle", "WalkSpeed", false, updateWalkSpeed)
+local wsSlider = createSlider(featPage, "WalkSpeed Value", 16, 500, 16, function(v) 
+    state.walkSpeed = v 
+    updateWalkSpeed()
+end)
+
+createToggle(featPage, "JumpPower Toggle", "JumpPower", false, updateJumpPower)
+local jpSlider = createSlider(featPage, "JumpPower Value", 50, 500, 50, function(v) 
+    state.jumpPower = v 
+    updateJumpPower()
+end)
+
+local resetBtn = Instance.new("TextButton")
+resetBtn.Size = UDim2.new(0.9, 0, 0, 45)
+resetBtn.BackgroundColor3 = pal.danger
+resetBtn.Text = "Reset WS & JP to Default"
+resetBtn.Font = Enum.Font.GothamBold
+resetBtn.TextColor3 = pal.text
+resetBtn.TextSize = 18
+resetBtn.Parent = featPage
+addCorner(resetBtn, 8)
+
+resetBtn.MouseButton1Click:Connect(function()
+    state.walkSpeed = 16
+    state.jumpPower = 50
+    state.wsEnabled = false
+    state.jpEnabled = false
+    
+    updateWalkSpeed()
+    updateJumpPower()
+    
+    wsSlider.Label.Text = "WalkSpeed Value: 16"
+    wsSlider.Fill.Size = UDim2.fromScale(0, 1)
+    
+    jpSlider.Label.Text = "JumpPower Value: 50"
+    jpSlider.Fill.Size = UDim2.fromScale(0, 1)
+    
+    toggles.WalkSpeed.Btn.BackgroundColor3 = pal.danger
+    toggles.WalkSpeed.Btn.Text = "WalkSpeed Toggle [OFF]"
+    
+    toggles.JumpPower.Btn.BackgroundColor3 = pal.danger
+    toggles.JumpPower.Btn.Text = "JumpPower Toggle [OFF]"
+end)
 
 local tpFrame = Instance.new("Frame")
-tpFrame.Size = UDim2.new(0.9, 0, 0, 50)
+tpFrame.Size = UDim2.new(0.9, 0, 0, 60)
 tpFrame.BackgroundColor3 = pal.button
 tpFrame.Parent = featPage
-addCorner(tpFrame, 6)
+addCorner(tpFrame, 8)
 
 local tpBtn = Instance.new("TextButton")
 tpBtn.Size = UDim2.new(0.6, 0, 1, 0)
@@ -389,9 +547,9 @@ tpBtn.BackgroundColor3 = pal.panel
 tpBtn.Text = "Teleport to Mouse"
 tpBtn.Font = Enum.Font.GothamMedium
 tpBtn.TextColor3 = pal.text
-tpBtn.TextSize = 16
+tpBtn.TextSize = 18
 tpBtn.Parent = tpFrame
-addCorner(tpBtn, 6)
+addCorner(tpBtn, 8)
 tpBtn.MouseButton1Click:Connect(teleportToMouse)
 
 local tpKeyBtn = Instance.new("TextButton")
@@ -401,9 +559,9 @@ tpKeyBtn.BackgroundColor3 = pal.panel
 tpKeyBtn.Text = state.keybinds.Teleport.Name
 tpKeyBtn.Font = Enum.Font.Gotham
 tpKeyBtn.TextColor3 = pal.accent
-tpKeyBtn.TextSize = 14
+tpKeyBtn.TextSize = 16
 tpKeyBtn.Parent = tpFrame
-addCorner(tpKeyBtn, 6)
+addCorner(tpKeyBtn, 8)
 
 tpKeyBtn.MouseButton1Click:Connect(function()
     tpKeyBtn.Text = "..."
@@ -412,17 +570,121 @@ end)
 
 toggles.Teleport = {Action = teleportToMouse, KeyBtn = tpKeyBtn}
 
+local kickInput = Instance.new("TextBox")
+kickInput.Size = UDim2.new(0.9, 0, 0, 45)
+kickInput.BackgroundColor3 = pal.button
+kickInput.Text = ""
+kickInput.PlaceholderText = "Username to kick"
+kickInput.Font = Enum.Font.Gotham
+kickInput.TextColor3 = pal.text
+kickInput.TextSize = 18
+kickInput.Parent = featPage
+addCorner(kickInput, 8)
+
+local kickBtn = Instance.new("TextButton")
+kickBtn.Size = UDim2.new(0.9, 0, 0, 45)
+kickBtn.BackgroundColor3 = pal.danger
+kickBtn.Text = "Kick Player (Client)"
+kickBtn.Font = Enum.Font.GothamBold
+kickBtn.TextColor3 = pal.text
+kickBtn.TextSize = 18
+kickBtn.Parent = featPage
+addCorner(kickBtn, 8)
+
+kickBtn.MouseButton1Click:Connect(function()
+    local targetName = kickInput.Text:lower()
+    for _, p in pairs(Players:GetPlayers()) do
+        if p.Name:lower():match(targetName) or p.DisplayName:lower():match(targetName) then
+            p:Destroy()
+            kickBtn.Text = "Removed " .. p.Name
+            task.wait(1.5)
+            kickBtn.Text = "Kick Player (Client)"
+            return
+        end
+    end
+end)
+
 local dexBtn = Instance.new("TextButton")
-dexBtn.Size = UDim2.new(0.9, 0, 0, 40)
+dexBtn.Size = UDim2.new(0.9, 0, 0, 45)
 dexBtn.BackgroundColor3 = pal.button
 dexBtn.Text = "Dex Explorer"
 dexBtn.Font = Enum.Font.GothamMedium
 dexBtn.TextColor3 = pal.text
-dexBtn.TextSize = 16
+dexBtn.TextSize = 18
 dexBtn.Parent = featPage
-addCorner(dexBtn, 6)
+addCorner(dexBtn, 8)
 dexBtn.MouseButton1Click:Connect(function()
     loadstring(game:HttpGet("https://raw.githubusercontent.com/infyiff/backup/main/dex.lua"))()
+end)
+
+local btoolsBtn = Instance.new("TextButton")
+btoolsBtn.Size = UDim2.new(0.9, 0, 0, 45)
+btoolsBtn.BackgroundColor3 = pal.button
+btoolsBtn.Text = "Add Btools"
+btoolsBtn.Font = Enum.Font.GothamMedium
+btoolsBtn.TextColor3 = pal.text
+btoolsBtn.TextSize = 18
+btoolsBtn.Parent = featPage
+addCorner(btoolsBtn, 8)
+btoolsBtn.MouseButton1Click:Connect(function()
+    local backpack = player:WaitForChild("Backpack")
+
+    local hammer = Instance.new("HopperBin")
+    hammer.Name = "Hammer"
+    hammer.BinType = 4
+    hammer.Parent = backpack
+
+    local cloneTool = Instance.new("HopperBin")
+    cloneTool.Name = "Clone"
+    cloneTool.BinType = 3
+    cloneTool.Parent = backpack
+
+    local grabTool = Instance.new("HopperBin")
+    grabTool.Name = "Grab"
+    grabTool.BinType = 2
+    grabTool.Parent = backpack
+end)
+
+local banBtn = Instance.new("TextButton")
+banBtn.Size = UDim2.new(0.9, 0, 0, 45)
+banBtn.BackgroundColor3 = pal.danger
+banBtn.Text = "Add Ban Hammer"
+banBtn.Font = Enum.Font.GothamBold
+banBtn.TextColor3 = pal.text
+banBtn.TextSize = 18
+banBtn.Parent = featPage
+addCorner(banBtn, 8)
+banBtn.MouseButton1Click:Connect(function()
+    local backpack = player:WaitForChild("Backpack")
+    local tool = Instance.new("Tool")
+    tool.Name = "Ban Hammer"
+    tool.RequiresHandle = true
+    
+    local handle = game:GetObjects("rbxassetid://114452163024876")[1]
+    if handle then
+        handle.Name = "Handle"
+        handle.Parent = tool
+    else
+        handle = Instance.new("Part")
+        handle.Name = "Handle"
+        handle.Size = Vector3.new(1, 4, 1)
+        handle.Parent = tool
+    end
+    
+    tool.Activated:Connect(function()
+        local character = tool.Parent
+        if not character:IsA("Model") then return end
+        
+        local hitPart = mouse.Target
+        if hitPart and hitPart.Parent:FindFirstChild("Humanoid") then
+            local targetPlayer = Players:GetPlayerFromCharacter(hitPart.Parent)
+            if targetPlayer then
+                targetPlayer:Kick("Banned by Smoothie's Ban Hammer")
+            end
+        end
+    end)
+    
+    tool.Parent = backpack
 end)
 
 -- CURRENCY PAGE
@@ -432,42 +694,42 @@ local scanLabel = Instance.new("TextLabel")
 scanLabel.Text = "Enter amount of currency to scan for:"
 scanLabel.Font = Enum.Font.Gotham
 scanLabel.TextColor3 = pal.text
-scanLabel.TextSize = 16
-scanLabel.Size = UDim2.new(0.9, 0, 0, 30)
+scanLabel.TextSize = 18
+scanLabel.Size = UDim2.new(0.9, 0, 0, 40)
 scanLabel.BackgroundTransparency = 1
 scanLabel.Parent = currPage
 
 local amountInput = Instance.new("TextBox")
-amountInput.Size = UDim2.new(0.9, 0, 0, 40)
+amountInput.Size = UDim2.new(0.9, 0, 0, 50)
 amountInput.BackgroundColor3 = pal.button
 amountInput.Text = ""
 amountInput.PlaceholderText = "Current Amount"
 amountInput.Font = Enum.Font.Gotham
 amountInput.TextColor3 = pal.text
-amountInput.TextSize = 16
+amountInput.TextSize = 18
 amountInput.Parent = currPage
-addCorner(amountInput, 6)
+addCorner(amountInput, 8)
 
 local changeInput = Instance.new("TextBox")
-changeInput.Size = UDim2.new(0.9, 0, 0, 40)
+changeInput.Size = UDim2.new(0.9, 0, 0, 50)
 changeInput.BackgroundColor3 = pal.button
 changeInput.Text = ""
 changeInput.PlaceholderText = "New Amount"
 changeInput.Font = Enum.Font.Gotham
 changeInput.TextColor3 = pal.text
-changeInput.TextSize = 16
+changeInput.TextSize = 18
 changeInput.Parent = currPage
-addCorner(changeInput, 6)
+addCorner(changeInput, 8)
 
 local scanBtn = Instance.new("TextButton")
-scanBtn.Size = UDim2.new(0.9, 0, 0, 40)
+scanBtn.Size = UDim2.new(0.9, 0, 0, 50)
 scanBtn.BackgroundColor3 = pal.accent
 scanBtn.Text = "Scan & Change"
 scanBtn.Font = Enum.Font.GothamBold
 scanBtn.TextColor3 = pal.text
-scanBtn.TextSize = 16
+scanBtn.TextSize = 18
 scanBtn.Parent = currPage
-addCorner(scanBtn, 6)
+addCorner(scanBtn, 8)
 
 scanBtn.MouseButton1Click:Connect(function()
     local targetVal = tonumber(amountInput.Text)
@@ -501,8 +763,8 @@ local credText = Instance.new("TextLabel")
 credText.Text = "Created by Smoothie"
 credText.Font = Enum.Font.GothamBold
 credText.TextColor3 = pal.text
-credText.TextSize = 20
-credText.Size = UDim2.new(1, 0, 0, 60)
+credText.TextSize = 24
+credText.Size = UDim2.new(1, 0, 0, 80)
 credText.BackgroundTransparency = 1
 credText.Parent = credPage
 
@@ -531,9 +793,9 @@ UIS.InputBegan:Connect(function(input, gp)
 
     for feature, key in pairs(state.keybinds) do
         if input.KeyCode == key then
-            if toggles[feature].Toggle then
+            if toggles[feature] and toggles[feature].Toggle then
                 toggles[feature].Toggle()
-            elseif toggles[feature].Action then
+            elseif toggles[feature] and toggles[feature].Action then
                 toggles[feature].Action()
             end
         end
