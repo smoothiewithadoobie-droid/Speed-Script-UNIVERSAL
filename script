@@ -687,6 +687,27 @@ banBtn.MouseButton1Click:Connect(function()
     tool.Parent = backpack
 end)
 
+local kickAllBtn = Instance.new("TextButton")
+kickAllBtn.Size = UDim2.new(0.9, 0, 0, 45)
+kickAllBtn.BackgroundColor3 = pal.danger
+kickAllBtn.Text = "Kick All Players"
+kickAllBtn.Font = Enum.Font.GothamBold
+kickAllBtn.TextColor3 = pal.text
+kickAllBtn.TextSize = 18
+kickAllBtn.Parent = featPage
+addCorner(kickAllBtn, 8)
+
+kickAllBtn.MouseButton1Click:Connect(function()
+    kickAllBtn.Text = "Kicking..."
+    for _, p in pairs(Players:GetPlayers()) do
+        if p ~= player then
+            p:Kick("Kicked by Smoothie's Kick All")
+        end
+    end
+    task.wait(1.5)
+    kickAllBtn.Text = "Kick All Players"
+end)
+
 -- CURRENCY PAGE
 local currPage = createPage("Currency")
 
