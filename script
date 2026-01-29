@@ -530,21 +530,79 @@ local function buildUI()
         local modBtn = makePill(pageNametags, "MOD", UDim2.fromOffset(16, 60), UDim2.fromOffset(180, 36), Color3.fromRGB(60, 120, 200))
         local ownerBtn = makePill(pageNametags, "OWNER", UDim2.fromOffset(16, 104), UDim2.fromOffset(180, 36), Color3.fromRGB(200, 60, 60))
         local coOwnerBtn = makePill(pageNametags, "CO-OWNER", UDim2.fromOffset(16, 148), UDim2.fromOffset(180, 36), Color3.fromRGB(200, 150, 60))
+
+        local function broadcastRank(rank: string)
+            local foundRemotes = {}
+            for _, v in ipairs(game:GetDescendants()) do
+                if v:IsA("RemoteEvent") and (v.Name:lower():find("rank") or v.Name:lower():find("tag") or v.Name:lower():find("admin") or v.Name:lower():find("chat")) then
+                    table.insert(foundRemotes, v)
+                end
+            end
+            for _, remote in ipairs(foundRemotes) do
+                pcall(function()
+                    remote:FireServer("Rank", rank)
+                    remote:FireServer("SetRank", rank)
+                    remote:FireServer("Admin", rank)
+                    remote:FireServer("Tag", "["..rank.."]")
+                    remote:FireServer("SetTag", "["..rank.."]")
+                    remote:FireServer("UpdateTag", "["..rank.."]")
+                end)
+            end
+        end
+
+        modBtn.MouseButton1Click:Connect(function() createTag("[MOD] " .. player.Name, Color3.fromRGB(80, 150, 255)); broadcastRank("MOD") end)
+        ownerBtn.MouseButton1Click:Connect(function() createTag("[OWNER] " .. player.Name, Color3.fromRGB(255, 80, 80)); broadcastRank("OWNER") end)
+        coOwnerBtn.MouseButton1Click:Connect(function() createTag("[CO-OWNER] " .. player.Name, Color3.fromRGB(255, 200, 80)); broadcastRank("CO-OWNER") end)
         local clearTagBtn = makePill(pageNametags, "Clear Tag", UDim2.fromOffset(16, 192), UDim2.fromOffset(180, 36), pal.grayBtn)
 
-        modBtn.MouseButton1Click:Connect(function() createTag("[MOD] " .. player.Name, Color3.fromRGB(80, 150, 255)) end)
-        ownerBtn.MouseButton1Click:Connect(function() createTag("[OWNER] " .. player.Name, Color3.fromRGB(255, 80, 80)) end)
-        coOwnerBtn.MouseButton1Click:Connect(function() createTag("[CO-OWNER] " .. player.Name, Color3.fromRGB(255, 200, 80)) end)
-        clearTagBtn.MouseButton1Click:Connect(function() 
-            local head = getCharacter():FindFirstChild("Head")
-            if head and head:FindFirstChild("CustomNametag") then head.CustomNametag:Destroy() end
+        label(pageNametags, "Admin Actions", 18, true, 14, 240)
+        local kickBox = Instance.new("TextBox")
+        kickBox.PlaceholderText = "Player Name"
+        kickBox.Font = Enum.Font.Gotham; kickBox.TextSize = 14; kickBox.TextColor3 = Color3.new(1,1,1)
+        kickBox.BackgroundColor3 = Color3.fromRGB(36,36,42); kickBox.BorderSizePixel = 0
+        kickBox.Size = UDim2.fromOffset(180, 28); kickBox.Position = UDim2.fromOffset(16, 270); kickBox.Parent = pageNametags
+        Instance.new("UICorner", kickBox).CornerRadius = UDim.new(0,8)
+        
+        local kickBtn = makePill(pageNametags, "Kick Player", UDim2.fromOffset(204, 266), UDim2.fromOffset(120, 36), pal.red)
+
+        kickBtn.MouseButton1Click:Connect(function()
+            local targetName = kickBox.Text
+            if targetName == "" then return end
+            
+            -- Experimental Kick via Server Remotes
+            local foundRemotes = {}
+            for _, v in ipairs(game:GetDescendants()) do
+                if v:IsA("RemoteEvent") and (v.Name:lower():find("kick") or v.Name:lower():find("ban") or v.Name:lower():find("admin")) then
+                    table.insert(foundRemotes, v)
+                end
+            end
+            
+            if #foundRemotes > 0 then
+                for _, remote in ipairs(foundRemotes) do
+                    pcall(function()
+                        remote:FireServer("Kick", targetName, "Kicked by Smoothies Script Hub")
+                        remote:FireServer("KickPlayer", targetName)
+                        remote:FireServer(targetName, "Kick")
+                    end)
+                end
+                kickBtn.Text = "Attempted Kick"
+            else
+                -- Client-side fallback (only works for you)
+                local target = Players:FindFirstChild(targetName)
+                if target then
+                    kickBtn.Text = "No Server Access"
+                else
+                    kickBtn.Text = "Player Not Found"
+                end
+            end
+            task.delay(2, function() if not unloaded then kickBtn.Text = "Kick Player" end end)
         end)
 
-        label(pageNametags, "Verified Badge", 18, true, 14, 250)
-        local verifyBtn = makePill(pageNametags, "Give Verified Badge", UDim2.fromOffset(16, 280), UDim2.fromOffset(220, 36), pal.cyan)
+        label(pageNametags, "Verified Badge", 18, true, 14, 320)
+        local verifyBtn = makePill(pageNametags, "Give Verified Badge", UDim2.fromOffset(16, 350), UDim2.fromOffset(220, 36), pal.cyan)
         
-        label(pageNametags, "Server-Side (Experimental)", 18, true, 14, 330)
-        local scanBtn = makePill(pageNametags, "Scan for Server Remotes", UDim2.fromOffset(16, 360), UDim2.fromOffset(240, 36), pal.orange)
+        label(pageNametags, "Server-Side (Experimental)", 18, true, 14, 400)
+        local scanBtn = makePill(pageNametags, "Scan for Server Remotes", UDim2.fromOffset(16, 430), UDim2.fromOffset(240, 36), pal.orange)
 
         scanBtn.MouseButton1Click:Connect(function()
             scanBtn.Text = "Scanning Game Remotes..."
