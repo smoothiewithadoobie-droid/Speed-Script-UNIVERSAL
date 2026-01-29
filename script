@@ -263,7 +263,16 @@ local function buildUI()
         sidebar.Parent = body
         Instance.new("UICorner", sidebar).CornerRadius = UDim.new(0,8)
 
-        local sideList = Instance.new("UIListLayout", sidebar)
+        local sideScroll = Instance.new("ScrollingFrame")
+        sideScroll.Size = UDim2.new(1, 0, 1, 0)
+        sideScroll.BackgroundTransparency = 1
+        sideScroll.BorderSizePixel = 0
+        sideScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+        sideScroll.ScrollBarThickness = 2
+        sideScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+        sideScroll.Parent = sidebar
+
+        local sideList = Instance.new("UIListLayout", sideScroll)
         sideList.SortOrder = Enum.SortOrder.LayoutOrder
         sideList.Padding = UDim.new(0, 8)
 
@@ -272,7 +281,7 @@ local function buildUI()
                 b.Text = txt; b.Font = Enum.Font.GothamBold; b.TextSize = 16; b.TextColor3 = Color3.new(1,1,1)
                 b.Size = UDim2.fromOffset(190, 44)
                 b.BackgroundColor3 = Color3.fromRGB(42,42,50)
-                b.BorderSizePixel = 0; b.Parent = sidebar
+                b.BorderSizePixel = 0; b.Parent = sidebar:FindFirstChildOfClass("ScrollingFrame") or sidebar
                 Instance.new("UICorner", b).CornerRadius = UDim.new(0,8)
                 return b
         end
