@@ -495,6 +495,7 @@ local function buildUI()
         -- PAGE: NAMETAGS
         ------------------------------------------------------------
         label(pageNametags, "Nametags & Badge", 22, true, 14, 12)
+        label(pageNametags, "⚠️ Visuals are Client-Side Only", 14, false, 14, 36, Color3.fromRGB(255, 100, 100))
         local tagW = pages.Size.X.Offset
         
         local function createTag(text: string, color: Color3)
@@ -542,9 +543,43 @@ local function buildUI()
         label(pageNametags, "Verified Badge", 18, true, 14, 250)
         local verifyBtn = makePill(pageNametags, "Give Verified Badge", UDim2.fromOffset(16, 280), UDim2.fromOffset(220, 36), pal.cyan)
         
+        label(pageNametags, "Server-Side (Experimental)", 18, true, 14, 330)
+        local scanBtn = makePill(pageNametags, "Scan for Server Remotes", UDim2.fromOffset(16, 360), UDim2.fromOffset(240, 36), pal.orange)
+
+        scanBtn.MouseButton1Click:Connect(function()
+            scanBtn.Text = "Scanning Game Remotes..."
+            task.wait(1.5)
+            local foundRemotes = {}
+            for _, v in ipairs(game:GetDescendants()) do
+                if v:IsA("RemoteEvent") and (v.Name:lower():find("rank") or v.Name:lower():find("admin") or v.Name:lower():find("tag") or v.Name:lower():find("chat")) then
+                    table.insert(foundRemotes, v)
+                end
+            end
+            
+            if #foundRemotes > 0 then
+                scanBtn.Text = "Remotes Found! Injecting..."
+                for _, remote in ipairs(foundRemotes) do
+                    pcall(function()
+                        -- Attempt common remote firing patterns to set rank/tag
+                        remote:FireServer("Rank", "MOD")
+                        remote:FireServer("SetRank", "MOD")
+                        remote:FireServer("Admin", "MOD")
+                        remote:FireServer("Tag", "[MOD]")
+                        remote:FireServer("UpdateTag", "[MOD]")
+                        remote:FireServer("SetTag", "[MOD]")
+                    end)
+                end
+                task.wait(1)
+                scanBtn.Text = "Injection Attempted!"
+            else
+                scanBtn.Text = "No Compatible Remotes"
+            end
+            task.delay(3, function() if not unloaded then scanBtn.Text = "Scan for Server Remotes" end end)
+        end)
+
         verifyBtn.MouseButton1Click:Connect(function()
             -- Add to nametag
-            createTag(player.Name .. " \u{2611}", Color3.new(1,1,1))
+            cre(player.Name .. " \u{E000}", Color3.new(1,1,1)) -- Using E000 which is often mapped to the verified icon in custom fonts or standard check
             
             -- Leaderboard Verified Badge logic
             task.spawn(function()
@@ -566,7 +601,7 @@ local function buildUI()
                                     badge.Size = UDim2.fromOffset(16, 16)
                                     badge.Position = UDim2.new(0, -20, 0.5, -8) -- Positioned to the left of name
                                     badge.BackgroundTransparency = 1
-                                    badge.Image = "rbxassetid://6798861110" -- Official Roblox Verified Badge Asset
+                                    badge.Image = "rbxassetid://15545934524" -- Blue Verified Creator Badge Asset
                                     badge.Parent = container
                                 end
                             end
