@@ -917,11 +917,13 @@ local function Toggle(parent, text, featureName, default, callback)
     }, {Library:MakeCorner(100)})
     local KeyBtn
     if state.keybinds[featureName] then
+        local _kb = state.keybinds[featureName]
         KeyBtn = Library:Create("TextButton", {
-            Text = "["..state.keybinds[featureName].Name.."]",
-            Font = Enum.Font.Code, TextSize = 11, TextColor3 = Theme.TextDim,
-            BackgroundTransparency = 1, Size = UDim2.fromOffset(30,20),
-            Position = UDim2.new(1,-90,0.5,-10), Parent = H
+            Text = _kb and "["..(_kb.Name).."]" or "[None]",
+            Font = Enum.Font.Code, TextSize = 11,
+            TextColor3 = _kb and Theme.TextDim or Theme.Danger,
+            BackgroundTransparency = 1, Size = UDim2.fromOffset(40,20),
+            Position = UDim2.new(1,-95,0.5,-10), Parent = H
         })
     end
     Btn.MouseButton1Click:Connect(function()
@@ -937,7 +939,7 @@ local function Toggle(parent, text, featureName, default, callback)
     end)
     if KeyBtn then
         KeyBtn.MouseButton1Click:Connect(function()
-            KeyBtn.Text = "[...]"; KeyBtn.TextColor3 = Theme.Accent
+            KeyBtn.Text = "[? / ESC=None]"; KeyBtn.TextColor3 = Theme.Accent
             state.listening = featureName
         end)
     end
@@ -947,7 +949,15 @@ local function Toggle(parent, text, featureName, default, callback)
             Library:Tween(Circle, {Position = val and UDim2.new(1,-18,0.5,-8) or UDim2.new(0,2,0.5,-8)})
         end,
         UpdateKey = function(k)
-            if KeyBtn then KeyBtn.Text = "["..k.Name.."]"; KeyBtn.TextColor3 = Theme.TextDim end
+            if KeyBtn then
+                if k then
+                    KeyBtn.Text = "["..k.Name.."]"
+                    KeyBtn.TextColor3 = Theme.TextDim
+                else
+                    KeyBtn.Text = "[None]"
+                    KeyBtn.TextColor3 = Theme.Danger
+                end
+            end
         end
     }
 end
@@ -6376,76 +6386,75 @@ local JJS_DOMAIN_SERVICES = {
     "DomainService",
 }
 
+-- Helper: given any args fired by an Effects event, find the character model
+local function jjsArgToChar(...)
+    local args = {...}
+    for _, arg in ipairs(args) do
+        if typeof(arg) == "Instance" then
+            if arg:IsA("Model") and arg:FindFirstChildOfClass("Humanoid") then
+                return arg
+            elseif arg:IsA("Player") then
+                return arg.Character
+            elseif arg:IsA("BasePart") then
+                -- arg might be a part inside a character
+                local model = arg:FindFirstAncestorOfClass("Model")
+                if model and model:FindFirstChildOfClass("Humanoid") then
+                    return model
+                end
+            end
+        end
+    end
+    return nil
+end
+
+local function jjsFlashChar(char, fillCol, outlineCol, duration)
+    if not char then return end
+    local p = Players:GetPlayerFromCharacter(char)
+    if not p or p == player then return end
+    if jjsMoveHighlights[p] and jjsMoveHighlights[p].Parent then
+        jjsMoveHighlights[p]:Destroy()
+    end
+    local hl = Instance.new("Highlight")
+    hl.FillColor = fillCol
+    hl.OutlineColor = outlineCol
+    hl.FillTransparency = 0.3
+    hl.OutlineTransparency = 0
+    hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+    hl.Adornee = char
+    hl.Parent = ESPFolder
+    jjsMoveHighlights[p] = hl
+    task.delay(duration, function()
+        if hl and hl.Parent then hl:Destroy() end
+        if jjsMoveHighlights[p] == hl then jjsMoveHighlights[p] = nil end
+    end)
+    return p
+end
+
 local function setupMoveESP()
+    -- Listen to Effects events — these are broadcast from the server to ALL clients
+    -- whenever any player uses a move. This is what lets us see other players' moves.
     for _, svcName in ipairs(JJS_MOVE_SERVICES) do
-        local re = getKnitRE(svcName, "Activated")
+        local re = getKnitRE(svcName, "Effects")
         if re then
-            local conn = re.OnClientEvent:Connect(function(targetArg)
+            local conn = re.OnClientEvent:Connect(function(...)
                 if not state.jjsMoveESP then return end
-                -- targetArg is usually the character or player who triggered
-                local char = nil
-                if typeof(targetArg) == "Instance" then
-                    if targetArg:IsA("Model") then
-                        char = targetArg
-                    elseif targetArg:IsA("Player") then
-                        char = targetArg.Character
-                    end
-                end
-                if not char then return end
-                local p = Players:GetPlayerFromCharacter(char)
-                if not p or p == player then return end
-                -- Flash a bright highlight on the character for 1.5 seconds
-                if jjsMoveHighlights[p] and jjsMoveHighlights[p].Parent then
-                    jjsMoveHighlights[p]:Destroy()
-                end
-                local hl = Instance.new("Highlight")
-                hl.FillColor = Color3.fromRGB(255, 100, 0)
-                hl.OutlineColor = Color3.fromRGB(255, 220, 0)
-                hl.FillTransparency = 0.3
-                hl.OutlineTransparency = 0
-                hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-                hl.Adornee = char
-                hl.Parent = ESPFolder
-                jjsMoveHighlights[p] = hl
-                task.delay(1.5, function()
-                    if hl and hl.Parent then hl:Destroy() end
-                    if jjsMoveHighlights[p] == hl then jjsMoveHighlights[p] = nil end
-                end)
+                local char = jjsArgToChar(...)
+                jjsFlashChar(char, Color3.fromRGB(255, 100, 0), Color3.fromRGB(255, 220, 0), 1.5)
             end)
             table.insert(jjsConnections, conn)
         end
     end
-    -- Also detect Domain Expansions (special highlight — red/purple)
+    -- Domain Expansions: listen to Effects on domain services — purple flash + notification
     for _, svcName in ipairs(JJS_DOMAIN_SERVICES) do
-        local re = getKnitRE(svcName, "Activated")
+        local re = getKnitRE(svcName, "Effects")
         if re then
-            local conn = re.OnClientEvent:Connect(function(targetArg)
+            local conn = re.OnClientEvent:Connect(function(...)
                 if not state.jjsMoveESP then return end
-                local char = nil
-                if typeof(targetArg) == "Instance" then
-                    if targetArg:IsA("Model") then char = targetArg
-                    elseif targetArg:IsA("Player") then char = targetArg.Character end
+                local char = jjsArgToChar(...)
+                local p = jjsFlashChar(char, Color3.fromRGB(180, 0, 255), Color3.fromRGB(255, 0, 100), 5)
+                if p then
+                    Library:Notify("JJS", p.DisplayName .. " activated Domain!", 3)
                 end
-                if not char then return end
-                local p = Players:GetPlayerFromCharacter(char)
-                if not p or p == player then return end
-                if jjsMoveHighlights[p] and jjsMoveHighlights[p].Parent then
-                    jjsMoveHighlights[p]:Destroy()
-                end
-                local hl = Instance.new("Highlight")
-                hl.FillColor = Color3.fromRGB(180, 0, 255)
-                hl.OutlineColor = Color3.fromRGB(255, 0, 100)
-                hl.FillTransparency = 0.2
-                hl.OutlineTransparency = 0
-                hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-                hl.Adornee = char
-                hl.Parent = ESPFolder
-                jjsMoveHighlights[p] = hl
-                Library:Notify("JJS", p.DisplayName .. " activated Domain!", 3)
-                task.delay(5, function()
-                    if hl and hl.Parent then hl:Destroy() end
-                    if jjsMoveHighlights[p] == hl then jjsMoveHighlights[p] = nil end
-                end)
             end)
             table.insert(jjsConnections, conn)
         end
@@ -6557,69 +6566,75 @@ end)
 
 Section(P_JJS, "Combat")
 
--- Auto Block: fires BlockService.RE.Deactivated repeatedly to re-initiate block timing
--- The real block input in JJS is holding F — we hold it via VirtualInputService
+-- Auto Block: holds the block key (F in JJS) and briefly releases to catch perfect block windows
 Toggle(P_JJS, "Auto Block / Perfect Block", "autoBlock", false, function(v)
     state.autoBlock = v
     if v then
-        Library:Notify("JJS", "Auto Block Enabled — holding block input (F)", 2)
+        Library:Notify("JJS", "Auto Block Enabled (F held)", 2)
         task.spawn(function()
             local VIS = game:GetService("VirtualInputService")
             while state.autoBlock do
                 pcall(function()
-                    -- Hold F (block key in JJS)
                     VIS:SendKeyEvent(true, Enum.KeyCode.F, false, game)
                 end)
                 task.wait(0.08)
                 pcall(function()
-                    -- Brief release to trigger perfect block timing window
+                    -- Brief release — catches the perfect block timing window
                     VIS:SendKeyEvent(false, Enum.KeyCode.F, false, game)
                 end)
                 task.wait(0.05)
             end
+            -- Make sure F is released when disabled
             pcall(function()
                 game:GetService("VirtualInputService"):SendKeyEvent(false, Enum.KeyCode.F, false, game)
             end)
         end)
     else
+        -- Release F on disable
+        pcall(function()
+            game:GetService("VirtualInputService"):SendKeyEvent(false, Enum.KeyCode.F, false, game)
+        end)
         Library:Notify("JJS", "Auto Block Disabled", 2)
     end
 end)
 
--- Kill Aura: fires FightService.RE.Activated (the M1 hitbox remote) on closest player
--- Also uses HitboxService.RE.Hitbox for registering hit detection server-side
+-- Kill Aura: faces the closest enemy and simulates M1 clicks.
+-- HitboxService.RE.Hitbox is the client→server remote for registering hits.
+-- FightService.RE.Activated is a server→client broadcast — we do NOT FireServer on it.
 Toggle(P_JJS, "Kill Aura (Auto M1)", "killAura", false, function(v)
     state.killAura = v
     if v then
         Library:Notify("JJS", "Kill Aura Enabled", 2)
         task.spawn(function()
-            local fightRE   = getKnitRE("FightService", "Activated")
-            local hitboxRE  = getKnitRE("HitboxService", "Hitbox")
+            local hitboxRE = getKnitRE("HitboxService", "Hitbox")
             while state.killAura do
                 pcall(function()
                     local target = jjsGetClosestEnemy(25)
                     if target and target.Character then
                         local eHRP = target.Character:FindFirstChild("HumanoidRootPart")
                         if eHRP then
-                            -- Face the target
                             local hrp = getHRP()
                             if hrp then
-                                hrp.CFrame = CFrame.lookAt(hrp.Position, Vector3.new(eHRP.Position.X, hrp.Position.Y, eHRP.Position.Z))
+                                -- Snap to face the target
+                                hrp.CFrame = CFrame.lookAt(
+                                    hrp.Position,
+                                    Vector3.new(eHRP.Position.X, hrp.Position.Y, eHRP.Position.Z)
+                                )
                             end
-                            -- Fire M1 remote (FightService handles basic M1 attacks)
-                            if fightRE then
-                                fightRE:FireServer(target.Character)
-                            end
-                            -- Also fire hitbox to register damage server-side
+                            -- Click at viewport center (not 0,0 which hits the chat button)
+                            local center = workspace.CurrentCamera.ViewportSize / 2
+                            local VIS = game:GetService("VirtualInputService")
+                            VIS:SendMouseButtonEvent(center.X, center.Y, 0, true, game, 0)
+                            task.wait(0.03)
+                            VIS:SendMouseButtonEvent(center.X, center.Y, 0, false, game, 0)
+                            -- Also send the hitbox request remote to register the hit server-side
                             if hitboxRE then
-                                hitboxRE:FireServer(target.Character)
+                                pcall(function() hitboxRE:FireServer(target.Character) end)
                             end
-                            -- Fallback: click button
-                            game:GetService("VirtualUser"):ClickButton1(Vector2.new())
                         end
                     end
                 end)
-                task.wait(0.12 + math.random() * 0.15)
+                task.wait(0.13 + math.random() * 0.1)
             end
         end)
     else
@@ -6627,23 +6642,27 @@ Toggle(P_JJS, "Kill Aura (Auto M1)", "killAura", false, function(v)
     end
 end)
 
--- Rapid M1 Spam: spams FightService.Activated faster than normal cooldown
+-- Rapid M1 Spam: clicks faster than the normal M1 cooldown allows
 Toggle(P_JJS, "Rapid M1 Spam", "jjsRapidM1", false, function(v)
     state.jjsRapidM1 = v
     if v then
         Library:Notify("JJS", "Rapid M1 Spam Enabled", 2)
         task.spawn(function()
-            local fightRE = getKnitRE("FightService", "Activated")
+            local hitboxRE = getKnitRE("HitboxService", "Hitbox")
+            local VIS = game:GetService("VirtualInputService")
             while state.jjsRapidM1 do
                 pcall(function()
                     local target = jjsGetClosestEnemy(30)
-                    if target and target.Character and fightRE then
-                        fightRE:FireServer(target.Character)
-                    else
-                        game:GetService("VirtualUser"):ClickButton1(Vector2.new())
+                    -- Click at the center of the viewport, not (0,0) which hits the chat button
+                    local center = workspace.CurrentCamera.ViewportSize / 2
+                    VIS:SendMouseButtonEvent(center.X, center.Y, 0, true, game, 0)
+                    task.wait(0.03)
+                    VIS:SendMouseButtonEvent(center.X, center.Y, 0, false, game, 0)
+                    if target and target.Character and hitboxRE then
+                        pcall(function() hitboxRE:FireServer(target.Character) end)
                     end
                 end)
-                task.wait(0.04)
+                task.wait(0.05)
             end
         end)
     else
@@ -6835,16 +6854,24 @@ local TogglesMap = {
     WalkSpeed = {UpdateKey = T_Speed.UpdateKey,     Func = updateWalkSpeed, Ref = T_Speed.Update},
     JumpPower = {UpdateKey = T_Jump.UpdateKey,      Func = updateJumpPower, Ref = T_Jump.Update},
     Teleport  = {UpdateKey = T_Teleport.UpdateKey,  Action = teleportToMouse},
-    Aimbot    = {UpdateKey = function(k) aimbotKeyBtn.Text = "["..k.Name.."]"; aimbotKeyBtn.TextColor3 = Theme.TextDim end, Func = toggleAimbot},
+    Aimbot    = {UpdateKey = function(k) aimbotKeyBtn.Text = k and "["..k.Name.."]" or "[None]"; aimbotKeyBtn.TextColor3 = k and Theme.TextDim or Theme.Danger end, Func = toggleAimbot},
     FlingOnTouch = {UpdateKey = T_Fling.UpdateKey, Func = toggleFlingOnTouch, Ref = T_Fling.Update}
 }
 
 UIS.InputBegan:Connect(function(input, gp)
     if state.listening then
         if input.UserInputType == Enum.UserInputType.Keyboard then
-            state.keybinds[state.listening] = input.KeyCode
-            if TogglesMap[state.listening] then
-                TogglesMap[state.listening].UpdateKey(input.KeyCode)
+            if input.KeyCode == Enum.KeyCode.Escape then
+                -- ESC = clear this keybind (set to None)
+                state.keybinds[state.listening] = nil
+                if TogglesMap[state.listening] then
+                    TogglesMap[state.listening].UpdateKey(nil)
+                end
+            else
+                state.keybinds[state.listening] = input.KeyCode
+                if TogglesMap[state.listening] then
+                    TogglesMap[state.listening].UpdateKey(input.KeyCode)
+                end
             end
             state.listening = nil
         end
@@ -6855,7 +6882,8 @@ UIS.InputBegan:Connect(function(input, gp)
     end
     if gp then return end
     for name, code in pairs(state.keybinds) do
-        if input.KeyCode == code and TogglesMap[name] then
+        -- Skip keybinds that have been cleared to nil
+        if code and input.KeyCode == code and TogglesMap[name] then
             local map = TogglesMap[name]
             if map.Action then
                 map.Action()
