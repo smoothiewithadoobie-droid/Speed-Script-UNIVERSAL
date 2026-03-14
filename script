@@ -20,7 +20,7 @@ local Theme = {
     Background = Color3.fromRGB(15, 15, 20),
     DarkPanel  = Color3.fromRGB(10, 10, 12),
     Sidebar    = Color3.fromRGB(18, 18, 22),
-    Accent     = Color3.fromRGB(168, 85, 247), -- Neon Purple
+    Accent     = Color3.fromRGB(168, 85, 247),
     AccentDim  = Color3.fromRGB(100, 40, 160),
     Text       = Color3.fromRGB(245, 245, 255),
     TextDim    = Color3.fromRGB(140, 140, 160),
@@ -46,6 +46,14 @@ local state = {
     jumpPower = 50,
     wsEnabled = false,
     jpEnabled = false,
+    -- ESP State
+    espEnabled = false,
+    espBoxes = true,
+    espNames = true,
+    espDistance = true,
+    espHealth = true,
+    espTeamColor = false,
+    espMaxDist = 500,
     keybinds = {
         Noclip = Enum.KeyCode.X,
         Fly = Enum.KeyCode.G,
@@ -81,18 +89,14 @@ function Library:MakeCorner(radius, parent)
     return Library:Create("UICorner", {CornerRadius = UDim.new(0, radius), Parent = parent})
 end
 
--- ANIMATED STROKE FUNCTION
 function Library:AddSwirlingStroke(parent, thickness)
     local stroke = Instance.new("UIStroke")
     stroke.Thickness = thickness
     stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
     stroke.Parent = parent
-    
     local gradient = Instance.new("UIGradient")
     gradient.Color = Theme.Outline1
     gradient.Parent = stroke
-    
-    -- Swirl Animation
     task.spawn(function()
         local rotation = 0
         while stroke.Parent do
@@ -105,53 +109,34 @@ function Library:AddSwirlingStroke(parent, thickness)
     return stroke
 end
 
--- NOTIFICATION SYSTEM
 local NotifyContainer
 function Library:Notify(title, msg, duration)
     if not NotifyContainer then return end
-    
     local card = Library:Create("Frame", {
-        Size = UDim2.new(1, 0, 0, 0), -- Animated open
+        Size = UDim2.new(1, 0, 0, 0),
         BackgroundColor3 = Theme.Sidebar,
         BorderSizePixel = 0,
         ClipsDescendants = true
     }, {Library:MakeCorner(6)})
-    
     Library:AddSwirlingStroke(card, 1.5)
-    
     local tFrame = Library:Create("Frame", {
         Size = UDim2.new(1, -20, 1, -10),
         Position = UDim2.fromOffset(10,5),
         BackgroundTransparency = 1,
         Parent = card
     })
-
-    local tTitle = Library:Create("TextLabel", {
-        Text = title,
-        Font = Enum.Font.GothamBold,
-        TextColor3 = Theme.Accent,
-        TextSize = 14,
-        Size = UDim2.new(1, 0, 0, 20),
-        BackgroundTransparency = 1,
-        TextXAlignment = Enum.TextXAlignment.Left,
-        Parent = tFrame
+    Library:Create("TextLabel", {
+        Text = title, Font = Enum.Font.GothamBold, TextColor3 = Theme.Accent,
+        TextSize = 14, Size = UDim2.new(1, 0, 0, 20), BackgroundTransparency = 1,
+        TextXAlignment = Enum.TextXAlignment.Left, Parent = tFrame
     })
-    
-    local tMsg = Library:Create("TextLabel", {
-        Text = msg,
-        Font = Enum.Font.Gotham,
-        TextColor3 = Theme.TextDim,
-        TextSize = 12,
-        Size = UDim2.new(1, 0, 0, 20),
-        Position = UDim2.new(0,0,0,18),
-        BackgroundTransparency = 1,
-        TextXAlignment = Enum.TextXAlignment.Left,
-        Parent = tFrame
+    Library:Create("TextLabel", {
+        Text = msg, Font = Enum.Font.Gotham, TextColor3 = Theme.TextDim,
+        TextSize = 12, Size = UDim2.new(1, 0, 0, 20), Position = UDim2.new(0,0,0,18),
+        BackgroundTransparency = 1, TextXAlignment = Enum.TextXAlignment.Left, Parent = tFrame
     })
-    
     card.Parent = NotifyContainer
     Library:Tween(card, {Size = UDim2.new(1, 0, 0, 60)}, 0.4)
-    
     task.delay(duration or 3, function()
         Library:Tween(card, {Size = UDim2.new(1, 0, 0, 0), BackgroundTransparency = 1}, 0.4)
         task.wait(0.4)
@@ -160,7 +145,7 @@ function Library:Notify(title, msg, duration)
 end
 
 ----------------------------------------------------------------
--- GAMEPLAY LOGIC (Preserved & Adapted)
+-- GAMEPLAY LOGIC
 ----------------------------------------------------------------
 local function getChar() return player.Character or player.CharacterAdded:Wait() end
 local function getHRP() return getChar():WaitForChild("HumanoidRootPart", 5) end
@@ -186,21 +171,17 @@ local function toggleFly(v)
     state.fly = v
     local hrp = getHRP()
     if not hrp then return end
-
     if v then
         Library:Notify("System", "Fly Enabled", 2)
         local bv = Instance.new("BodyVelocity")
         bv.Velocity = Vector3.new(0,0,0)
         bv.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
         bv.Parent = hrp
-        
         local bg = Instance.new("BodyGyro")
         bg.CFrame = hrp.CFrame
         bg.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
         bg.Parent = hrp
-        
         flyObjects = {bv, bg}
-        
         task.spawn(function()
             while state.fly do
                 local md = Vector3.new(0,0,0)
@@ -210,7 +191,6 @@ local function toggleFly(v)
                 if UIS:IsKeyDown(Enum.KeyCode.D) then md += camera.CFrame.RightVector end
                 if UIS:IsKeyDown(Enum.KeyCode.Space) then md += Vector3.new(0,1,0) end
                 if UIS:IsKeyDown(Enum.KeyCode.LeftShift) then md -= Vector3.new(0,1,0) end
-                
                 bv.Velocity = md * state.flySpeed
                 bg.CFrame = camera.CFrame
                 task.wait()
@@ -265,6 +245,236 @@ local function updateJumpPower()
 end
 
 ----------------------------------------------------------------
+-- ESP MODULE
+----------------------------------------------------------------
+local ESPFolder = Instance.new("Folder")
+ESPFolder.Name = "SmoothiesESP"
+ESPFolder.Parent = CoreGui
+
+local espObjects = {} -- [player] = { highlight, billboardGui, ... }
+
+local function getESPColor(p)
+    if state.espTeamColor and p.Team then
+        return p.TeamColor.Color
+    end
+    -- Cycle accent/pink per player for visual variety
+    local colors = {
+        Color3.fromRGB(168, 85, 247),  -- Purple
+        Color3.fromRGB(236, 72, 153),  -- Pink
+        Color3.fromRGB(56, 189, 248),  -- Cyan
+        Color3.fromRGB(74, 222, 128),  -- Green
+    }
+    local idx = (p.UserId % #colors) + 1
+    return colors[idx]
+end
+
+local function buildESPForPlayer(p)
+    if p == player then return end
+    if espObjects[p] then return end -- already built
+
+    local container = {}
+    espObjects[p] = container
+
+    -- Highlight (SelectionBox style via Highlight instance - works in supported executors)
+    local highlight = Instance.new("Highlight")
+    highlight.Name = "ESP_Highlight_" .. p.Name
+    highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+    highlight.FillTransparency = 0.75
+    highlight.OutlineTransparency = 0
+    highlight.OutlineColor = getESPColor(p)
+    highlight.FillColor = getESPColor(p)
+    highlight.Parent = ESPFolder
+    container.highlight = highlight
+
+    -- BillboardGui for name/distance/health text
+    local bbGui = Instance.new("BillboardGui")
+    bbGui.Name = "ESP_Billboard_" .. p.Name
+    bbGui.Size = UDim2.fromOffset(120, 50)
+    bbGui.StudsOffset = Vector3.new(0, 3.5, 0)
+    bbGui.AlwaysOnTop = true
+    bbGui.ResetOnSpawn = false
+    bbGui.Parent = ESPFolder
+    container.bbGui = bbGui
+
+    -- Name label
+    local nameLabel = Instance.new("TextLabel")
+    nameLabel.Name = "NameLabel"
+    nameLabel.Size = UDim2.new(1, 0, 0, 20)
+    nameLabel.Position = UDim2.new(0, 0, 0, 0)
+    nameLabel.BackgroundTransparency = 1
+    nameLabel.Text = p.DisplayName
+    nameLabel.TextColor3 = getESPColor(p)
+    nameLabel.Font = Enum.Font.GothamBold
+    nameLabel.TextSize = 13
+    nameLabel.TextStrokeTransparency = 0.5
+    nameLabel.TextStrokeColor3 = Color3.new(0,0,0)
+    nameLabel.Parent = bbGui
+    container.nameLabel = nameLabel
+
+    -- Distance label
+    local distLabel = Instance.new("TextLabel")
+    distLabel.Name = "DistLabel"
+    distLabel.Size = UDim2.new(1, 0, 0, 16)
+    distLabel.Position = UDim2.new(0, 0, 0, 20)
+    distLabel.BackgroundTransparency = 1
+    distLabel.Text = "0 studs"
+    distLabel.TextColor3 = Theme.TextDim
+    distLabel.Font = Enum.Font.Code
+    distLabel.TextSize = 11
+    distLabel.TextStrokeTransparency = 0.5
+    distLabel.TextStrokeColor3 = Color3.new(0,0,0)
+    distLabel.Parent = bbGui
+    container.distLabel = distLabel
+
+    -- Health label
+    local hpLabel = Instance.new("TextLabel")
+    hpLabel.Name = "HPLabel"
+    hpLabel.Size = UDim2.new(1, 0, 0, 14)
+    hpLabel.Position = UDim2.new(0, 0, 0, 36)
+    hpLabel.BackgroundTransparency = 1
+    hpLabel.Text = "HP: 100"
+    hpLabel.TextColor3 = Theme.Success
+    hpLabel.Font = Enum.Font.Code
+    hpLabel.TextSize = 11
+    hpLabel.TextStrokeTransparency = 0.5
+    hpLabel.TextStrokeColor3 = Color3.new(0,0,0)
+    hpLabel.Parent = bbGui
+    container.hpLabel = hpLabel
+
+    -- Attach billboard to character root if available
+    local function attachToChar(char)
+        if not char then return end
+        local hrp = char:FindFirstChild("HumanoidRootPart")
+        if hrp then
+            highlight.Adornee = char
+            bbGui.Adornee = hrp
+        end
+    end
+
+    attachToChar(p.Character)
+    p.CharacterAdded:Connect(function(char)
+        task.wait(0.5)
+        attachToChar(char)
+        -- Refresh color in case team changed
+        highlight.OutlineColor = getESPColor(p)
+        highlight.FillColor = getESPColor(p)
+        nameLabel.TextColor3 = getESPColor(p)
+    end)
+end
+
+local function removeESPForPlayer(p)
+    local container = espObjects[p]
+    if not container then return end
+    if container.highlight then container.highlight:Destroy() end
+    if container.bbGui then container.bbGui:Destroy() end
+    espObjects[p] = nil
+end
+
+local function clearAllESP()
+    for p, _ in pairs(espObjects) do
+        removeESPForPlayer(p)
+    end
+end
+
+local function refreshESPVisibility()
+    for p, container in pairs(espObjects) do
+        if container.highlight then
+            container.highlight.Enabled = state.espBoxes
+        end
+        if container.nameLabel then
+            container.nameLabel.Visible = state.espNames
+        end
+        if container.distLabel then
+            container.distLabel.Visible = state.espDistance
+        end
+        if container.hpLabel then
+            container.hpLabel.Visible = state.espHealth
+        end
+    end
+end
+
+-- Update loop: distance + health
+RunService.RenderStepped:Connect(function()
+    if not state.espEnabled then return end
+
+    local myHRP = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+
+    for p, container in pairs(espObjects) do
+        if not p or not p.Parent then
+            removeESPForPlayer(p)
+            continue
+        end
+
+        local char = p.Character
+        if not char then continue end
+
+        local hrp = char:FindFirstChild("HumanoidRootPart")
+        local hum = char:FindFirstChildOfClass("Humanoid")
+
+        -- Distance
+        if hrp and myHRP then
+            local dist = math.floor((hrp.Position - myHRP.Position).Magnitude)
+            if dist > state.espMaxDist then
+                -- Hide beyond max distance
+                if container.highlight then container.highlight.Enabled = false end
+                if container.bbGui then container.bbGui.Enabled = false end
+                continue
+            else
+                if container.highlight then container.highlight.Enabled = state.espBoxes end
+                if container.bbGui then container.bbGui.Enabled = true end
+            end
+            if container.distLabel and state.espDistance then
+                container.distLabel.Text = dist .. " studs"
+            end
+        end
+
+        -- Health
+        if hum and container.hpLabel and state.espHealth then
+            local hp = math.floor(hum.Health)
+            local maxHp = math.floor(hum.MaxHealth)
+            local ratio = hum.Health / math.max(hum.MaxHealth, 1)
+            container.hpLabel.Text = "HP: " .. hp .. "/" .. maxHp
+            -- Color: green → yellow → red
+            if ratio > 0.6 then
+                container.hpLabel.TextColor3 = Theme.Success
+            elseif ratio > 0.3 then
+                container.hpLabel.TextColor3 = Color3.fromRGB(250, 204, 21)
+            else
+                container.hpLabel.TextColor3 = Theme.Danger
+            end
+        end
+    end
+end)
+
+local function toggleESP(v)
+    state.espEnabled = v
+    if v then
+        -- Build for all current players
+        for _, p in pairs(Players:GetPlayers()) do
+            buildESPForPlayer(p)
+        end
+        refreshESPVisibility()
+        Library:Notify("ESP", "Entity tracking active", 2)
+    else
+        clearAllESP()
+        Library:Notify("ESP", "Entity tracking disabled", 2)
+    end
+end
+
+-- Auto-manage players joining/leaving
+Players.PlayerAdded:Connect(function(p)
+    if state.espEnabled then
+        task.wait(1)
+        buildESPForPlayer(p)
+        refreshESPVisibility()
+    end
+end)
+
+Players.PlayerRemoving:Connect(function(p)
+    removeESPForPlayer(p)
+end)
+
+----------------------------------------------------------------
 -- MAIN UI CONSTRUCTION
 ----------------------------------------------------------------
 local ScreenGui = Library:Create("ScreenGui", {
@@ -273,7 +483,6 @@ local ScreenGui = Library:Create("ScreenGui", {
     Parent = CoreGui
 })
 
--- NOTIFICATION HOLDER
 NotifyContainer = Library:Create("Frame", {
     Size = UDim2.fromOffset(250, 400),
     Position = UDim2.new(1, -270, 1, -420),
@@ -285,7 +494,6 @@ notifyLayout.Padding = UDim.new(0, 10)
 notifyLayout.VerticalAlignment = Enum.VerticalAlignment.Bottom
 notifyLayout.Parent = NotifyContainer
 
--- MAIN FRAME
 local MainFrame = Library:Create("Frame", {
     Size = UDim2.fromOffset(650, 420),
     Position = UDim2.fromScale(0.5, 0.5),
@@ -294,10 +502,8 @@ local MainFrame = Library:Create("Frame", {
     Parent = ScreenGui
 }, {Library:MakeCorner(12)})
 
--- Add The Custom Swirl
 Library:AddSwirlingStroke(MainFrame, 2.5)
 
--- HEADER
 local Header = Library:Create("Frame", {
     Size = UDim2.new(1, 0, 0, 50),
     BackgroundColor3 = Theme.Sidebar,
@@ -305,8 +511,7 @@ local Header = Library:Create("Frame", {
     Parent = MainFrame
 }, {Library:MakeCorner(12)})
 
--- Fix corner clipping for header
-local HeaderFix = Library:Create("Frame", {
+Library:Create("Frame", {
     Size = UDim2.new(1, 0, 0, 10),
     Position = UDim2.new(0,0,1,-10),
     BackgroundColor3 = Theme.Sidebar,
@@ -315,7 +520,7 @@ local HeaderFix = Library:Create("Frame", {
     Parent = Header
 })
 
-local Title = Library:Create("TextLabel", {
+Library:Create("TextLabel", {
     Text = "SMOOTHIES <font color='#a855f7'>HUB</font> V2",
     RichText = true,
     Font = Enum.Font.GothamBlack,
@@ -328,25 +533,18 @@ local Title = Library:Create("TextLabel", {
     Parent = Header
 })
 
--- HEADER CONTROLS
 local CloseBtn = Library:Create("TextButton", {
-    Text = "",
-    Size = UDim2.fromOffset(14, 14),
+    Text = "", Size = UDim2.fromOffset(14, 14),
     Position = UDim2.new(1, -30, 0.5, -7),
-    BackgroundColor3 = Theme.Danger,
-    Parent = Header
+    BackgroundColor3 = Theme.Danger, Parent = Header
 }, {Library:MakeCorner(100)})
-
 CloseBtn.MouseButton1Click:Connect(function() ScreenGui:Destroy() end)
 
 local MinBtn = Library:Create("TextButton", {
-    Text = "",
-    Size = UDim2.fromOffset(14, 14),
+    Text = "", Size = UDim2.fromOffset(14, 14),
     Position = UDim2.new(1, -55, 0.5, -7),
-    BackgroundColor3 = Color3.fromRGB(250, 204, 21), -- Yellow
-    Parent = Header
+    BackgroundColor3 = Color3.fromRGB(250, 204, 21), Parent = Header
 }, {Library:MakeCorner(100)})
-
 MinBtn.MouseButton1Click:Connect(function()
     state.minimized = not state.minimized
     if state.minimized then
@@ -356,7 +554,6 @@ MinBtn.MouseButton1Click:Connect(function()
     end
 end)
 
--- DRAGGING
 local dragging, dragStart, startPos
 Header.InputBegan:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1 then
@@ -371,7 +568,6 @@ UIS.InputChanged:Connect(function(input)
 end)
 UIS.InputEnded:Connect(function(i) if i.UserInputType == Enum.UserInputType.MouseButton1 then dragging = false end end)
 
--- CONTENT CONTAINER
 local ContentArea = Library:Create("Frame", {
     Size = UDim2.new(1, -160, 1, -60),
     Position = UDim2.new(0, 155, 0, 55),
@@ -379,14 +575,13 @@ local ContentArea = Library:Create("Frame", {
     Parent = MainFrame
 })
 
--- SIDEBAR
 local Sidebar = Library:Create("Frame", {
     Size = UDim2.new(0, 150, 1, -50),
     Position = UDim2.new(0, 0, 0, 50),
     BackgroundColor3 = Theme.Sidebar,
     BorderSizePixel = 0,
     Parent = MainFrame
-}, {Library:Create("UICorner", {CornerRadius = UDim.new(0, 0), Parent = nil})}) -- Hacky corner fix for left side
+})
 
 local SidebarLayout = Library:Create("Frame", {
     Size = UDim2.new(1, -20, 1, -20),
@@ -395,12 +590,12 @@ local SidebarLayout = Library:Create("Frame", {
     Parent = Sidebar
 })
 
-local TabList = Library:Create("UIListLayout", {Padding = UDim.new(0, 8), Parent = SidebarLayout})
+Library:Create("UIListLayout", {Padding = UDim.new(0, 8), Parent = SidebarLayout})
 
 local Pages = {}
 local CurrentTab = nil
 
-local function CreateTab(name, iconId)
+local function CreateTab(name)
     local PageFrame = Library:Create("ScrollingFrame", {
         Size = UDim2.new(1, 0, 1, 0),
         BackgroundTransparency = 1,
@@ -410,7 +605,7 @@ local function CreateTab(name, iconId)
         Parent = ContentArea
     })
     Library:Create("UIListLayout", {Padding = UDim.new(0, 10), HorizontalAlignment = Enum.HorizontalAlignment.Center, Parent = PageFrame})
-    
+
     local TabBtn = Library:Create("TextButton", {
         Text = name,
         Font = Enum.Font.GothamMedium,
@@ -420,28 +615,25 @@ local function CreateTab(name, iconId)
         Size = UDim2.new(1, 0, 0, 35),
         Parent = SidebarLayout
     }, {Library:MakeCorner(6)})
-    
+
     TabBtn.MouseButton1Click:Connect(function()
         for _, p in pairs(ContentArea:GetChildren()) do if p:IsA("ScrollingFrame") then p.Visible = false end end
         PageFrame.Visible = true
-        
-        -- Reset other buttons
         for _, b in pairs(SidebarLayout:GetChildren()) do
             if b:IsA("TextButton") then
                 Library:Tween(b, {TextColor3 = Theme.TextDim, BackgroundColor3 = Theme.DarkPanel})
             end
         end
-        -- Highlight active
         Library:Tween(TabBtn, {TextColor3 = Theme.Text, BackgroundColor3 = Theme.Accent})
     end)
-    
+
     if not CurrentTab then
         CurrentTab = PageFrame
         PageFrame.Visible = true
         TabBtn.BackgroundColor3 = Theme.Accent
         TabBtn.TextColor3 = Theme.Text
     end
-    
+
     return PageFrame
 end
 
@@ -466,10 +658,8 @@ local function Toggle(parent, text, featureName, default, callback)
         Parent = parent
     }, {Library:MakeCorner(6)})
 
-    local Title = Library:Create("TextLabel", {
-        Text = text,
-        Font = Enum.Font.GothamSemibold,
-        TextSize = 14,
+    Library:Create("TextLabel", {
+        Text = text, Font = Enum.Font.GothamSemibold, TextSize = 14,
         TextColor3 = Theme.Text,
         Size = UDim2.new(0.6, 0, 1, 0),
         Position = UDim2.fromOffset(15, 0),
@@ -479,13 +669,12 @@ local function Toggle(parent, text, featureName, default, callback)
     })
 
     local Btn = Library:Create("TextButton", {
-        Text = "",
-        Size = UDim2.fromOffset(40, 20),
+        Text = "", Size = UDim2.fromOffset(40, 20),
         Position = UDim2.new(1, -55, 0.5, -10),
         BackgroundColor3 = default and Theme.Accent or Color3.fromRGB(40,40,45),
         Parent = Holder
     }, {Library:MakeCorner(20)})
-    
+
     local Circle = Library:Create("Frame", {
         Size = UDim2.fromOffset(16, 16),
         Position = default and UDim2.new(1, -18, 0.5, -8) or UDim2.new(0, 2, 0.5, -8),
@@ -493,42 +682,46 @@ local function Toggle(parent, text, featureName, default, callback)
         Parent = Btn
     }, {Library:MakeCorner(100)})
 
-    -- Keybind
-    local KeyBtn = Library:Create("TextButton", {
-        Text = "[" .. (state.keybinds[featureName] and state.keybinds[featureName].Name or "?") .. "]",
-        Font = Enum.Font.Code,
-        TextSize = 11,
-        TextColor3 = Theme.TextDim,
-        BackgroundTransparency = 1,
-        Size = UDim2.fromOffset(30, 20),
-        Position = UDim2.new(1, -90, 0.5, -10),
-        Parent = Holder
-    })
+    local KeyBtn
+    if state.keybinds[featureName] then
+        KeyBtn = Library:Create("TextButton", {
+            Text = "[" .. state.keybinds[featureName].Name .. "]",
+            Font = Enum.Font.Code, TextSize = 11, TextColor3 = Theme.TextDim,
+            BackgroundTransparency = 1,
+            Size = UDim2.fromOffset(30, 20),
+            Position = UDim2.new(1, -90, 0.5, -10),
+            Parent = Holder
+        })
+    end
 
     Btn.MouseButton1Click:Connect(function()
-        local key = featureName:lower() == "invis" and "invis" or featureName:lower() == "walkspeed" and "wsEnabled" or featureName:lower() == "jumppower" and "jpEnabled" or featureName:lower()
+        local key = featureName:lower() == "invis" and "invis"
+            or featureName:lower() == "walkspeed" and "wsEnabled"
+            or featureName:lower() == "jumppower" and "jpEnabled"
+            or featureName:lower()
         state[key] = not state[key]
-        
         local active = state[key]
         Library:Tween(Btn, {BackgroundColor3 = active and Theme.Accent or Color3.fromRGB(40,40,45)})
         Library:Tween(Circle, {Position = active and UDim2.new(1, -18, 0.5, -8) or UDim2.new(0, 2, 0.5, -8)})
         callback(active)
     end)
-    
-    KeyBtn.MouseButton1Click:Connect(function()
-        KeyBtn.Text = "[...]"
-        KeyBtn.TextColor3 = Theme.Accent
-        state.listening = featureName
-    end)
-    
-    -- Store for external updates
+
+    if KeyBtn then
+        KeyBtn.MouseButton1Click:Connect(function()
+            KeyBtn.Text = "[...]"
+            KeyBtn.TextColor3 = Theme.Accent
+            state.listening = featureName
+        end)
+    end
+
     return {
         Update = function(val)
-             -- Visual update logic
-             Library:Tween(Btn, {BackgroundColor3 = val and Theme.Accent or Color3.fromRGB(40,40,45)})
-             Library:Tween(Circle, {Position = val and UDim2.new(1, -18, 0.5, -8) or UDim2.new(0, 2, 0.5, -8)})
+            Library:Tween(Btn, {BackgroundColor3 = val and Theme.Accent or Color3.fromRGB(40,40,45)})
+            Library:Tween(Circle, {Position = val and UDim2.new(1, -18, 0.5, -8) or UDim2.new(0, 2, 0.5, -8)})
         end,
-        UpdateKey = function(k) KeyBtn.Text = "["..k.Name.."]"; KeyBtn.TextColor3 = Theme.TextDim end
+        UpdateKey = function(k)
+            if KeyBtn then KeyBtn.Text = "["..k.Name.."]"; KeyBtn.TextColor3 = Theme.TextDim end
+        end
     }
 end
 
@@ -540,21 +733,17 @@ local function Slider(parent, text, min, max, default, callback)
     }, {Library:MakeCorner(6)})
 
     Library:Create("TextLabel", {
-        Text = text,
-        Font = Enum.Font.GothamSemibold,
-        TextSize = 14,
+        Text = text, Font = Enum.Font.GothamSemibold, TextSize = 14,
         TextColor3 = Theme.Text,
         Position = UDim2.fromOffset(15, 12),
-        Size = UDim2.fromOffset(100, 20),
+        Size = UDim2.fromOffset(150, 20),
         BackgroundTransparency = 1,
         TextXAlignment = Enum.TextXAlignment.Left,
         Parent = Holder
     })
 
     local ValLabel = Library:Create("TextLabel", {
-        Text = tostring(default),
-        Font = Enum.Font.Code,
-        TextSize = 13,
+        Text = tostring(default), Font = Enum.Font.Code, TextSize = 13,
         TextColor3 = Theme.Accent,
         Position = UDim2.new(1, -65, 0, 12),
         Size = UDim2.fromOffset(50, 20),
@@ -605,13 +794,10 @@ local function Button(parent, text, color, callback)
     local Btn = Library:Create("TextButton", {
         Size = UDim2.new(0.98, 0, 0, 40),
         BackgroundColor3 = color or Theme.DarkPanel,
-        Text = text,
-        Font = Enum.Font.GothamBold,
-        TextColor3 = Theme.Text,
-        TextSize = 14,
+        Text = text, Font = Enum.Font.GothamBold,
+        TextColor3 = Theme.Text, TextSize = 14,
         Parent = parent
     }, {Library:MakeCorner(6)})
-    
     Btn.MouseEnter:Connect(function() Library:Tween(Btn, {BackgroundColor3 = Theme.AccentDim}) end)
     Btn.MouseLeave:Connect(function() Library:Tween(Btn, {BackgroundColor3 = color or Theme.DarkPanel}) end)
     Btn.MouseButton1Click:Connect(callback)
@@ -624,29 +810,24 @@ local function Input(parent, placeholder)
         BackgroundColor3 = Theme.DarkPanel,
         Parent = parent
     }, {Library:MakeCorner(6), Library:Create("UIStroke", {Color = Theme.Sidebar, Thickness = 1})})
-
-    local Box = Library:Create("TextBox", {
+    return Library:Create("TextBox", {
         Size = UDim2.new(1, -20, 1, 0),
         Position = UDim2.fromOffset(10, 0),
         BackgroundTransparency = 1,
-        Text = "",
-        PlaceholderText = placeholder,
-        TextColor3 = Theme.Text,
-        PlaceholderColor3 = Theme.TextDim,
-        Font = Enum.Font.Gotham,
-        TextSize = 14,
+        Text = "", PlaceholderText = placeholder,
+        TextColor3 = Theme.Text, PlaceholderColor3 = Theme.TextDim,
+        Font = Enum.Font.Gotham, TextSize = 14,
         Parent = Container
     })
-    return Box
 end
 
 ----------------------------------------------------------------
 -- PAGE CONTENT
 ----------------------------------------------------------------
 
--- // MAIN PAGE //
+-- DASHBOARD
 local P_Main = CreateTab("Dashboard")
-local Avatar = Library:Create("ImageLabel", {
+Library:Create("ImageLabel", {
     Size = UDim2.fromOffset(80, 80),
     Image = "rbxthumb://type=AvatarHeadShot&id=" .. player.UserId .. "&w=150&h=150",
     BackgroundColor3 = Theme.DarkPanel,
@@ -655,8 +836,7 @@ local Avatar = Library:Create("ImageLabel", {
 
 Library:Create("TextLabel", {
     Text = "Welcome back, " .. player.DisplayName,
-    Font = Enum.Font.GothamBold,
-    TextSize = 18,
+    Font = Enum.Font.GothamBold, TextSize = 18,
     TextColor3 = Theme.Accent,
     Size = UDim2.new(1, 0, 0, 30),
     BackgroundTransparency = 1,
@@ -665,8 +845,7 @@ Library:Create("TextLabel", {
 
 local StatLabel = Library:Create("TextLabel", {
     Text = "FPS: 60 | Ping: 0ms",
-    Font = Enum.Font.Code,
-    TextSize = 14,
+    Font = Enum.Font.Code, TextSize = 14,
     TextColor3 = Theme.TextDim,
     Size = UDim2.new(1, 0, 0, 20),
     BackgroundTransparency = 1,
@@ -681,7 +860,7 @@ task.spawn(function()
     end
 end)
 
--- // PLAYER MODS PAGE //
+-- LOCAL PLAYER
 local P_Player = CreateTab("LocalPlayer")
 local T_Noclip = Toggle(P_Player, "Noclip Mode", "Noclip", false, toggleNoclip)
 local T_Fly = Toggle(P_Player, "Flight Mode", "Fly", false, toggleFly)
@@ -692,24 +871,19 @@ T_Teleport.UpdateKey(state.keybinds.Teleport)
 Section(P_Player, "Movement Modifiers")
 local T_Speed = Toggle(P_Player, "Force WalkSpeed", "WalkSpeed", false, updateWalkSpeed)
 local S_Speed = Slider(P_Player, "Speed Value", 16, 300, 16, function(v) state.walkSpeed = v; updateWalkSpeed() end)
-
 local T_Jump = Toggle(P_Player, "Force JumpPower", "JumpPower", false, updateJumpPower)
 local S_Jump = Slider(P_Player, "Jump Value", 50, 400, 50, function(v) state.jumpPower = v; updateJumpPower() end)
 
 Button(P_Player, "Reset Physics Stats", Theme.Danger, function()
-    state.walkSpeed = 16
-    state.jumpPower = 50
-    state.wsEnabled = false 
-    state.jpEnabled = false
+    state.walkSpeed = 16; state.jumpPower = 50
+    state.wsEnabled = false; state.jpEnabled = false
     updateWalkSpeed(); updateJumpPower()
-    T_Speed.Update(false)
-    T_Jump.Update(false)
-    S_Speed.Set(16)
-    S_Jump.Set(50)
+    T_Speed.Update(false); T_Jump.Update(false)
+    S_Speed.Set(16); S_Jump.Set(50)
     Library:Notify("System", "Physics reset to default", 2)
 end)
 
--- // SERVER PAGE //
+-- SERVER TOOLS
 local P_Server = CreateTab("Server Tools")
 local KickBox = Input(P_Server, "Username to Kick (Client-side)")
 Button(P_Server, "Kick User", Theme.Danger, function()
@@ -726,9 +900,9 @@ end)
 
 Section(P_Server, "Tools")
 Button(P_Server, "Add BTools (F3X)", nil, function()
-    local b = Instance.new("HopperBin", player.Backpack); b.BinType = 4 -- Hammer
-    local c = Instance.new("HopperBin", player.Backpack); c.BinType = 3 -- Clone
-    local d = Instance.new("HopperBin", player.Backpack); d.BinType = 2 -- Grab
+    local b = Instance.new("HopperBin", player.Backpack); b.BinType = 4
+    local c = Instance.new("HopperBin", player.Backpack); c.BinType = 3
+    local d = Instance.new("HopperBin", player.Backpack); d.BinType = 2
     Library:Notify("Inventory", "Building tools added", 2)
 end)
 
@@ -743,16 +917,12 @@ Button(P_Server, "Launch SimpleSpy", nil, function()
 end)
 
 Button(P_Server, "Universal Ban Hammer", Theme.Danger, function()
-   local backpack = player:WaitForChild("Backpack")
+    local backpack = player:WaitForChild("Backpack")
     local tool = Instance.new("Tool")
     tool.Name = "Ban Hammer"
     tool.RequiresHandle = true
-    
-    local handle = game:GetObjects("rbxassetid://114452163024876")[1]
-    if handle then handle.Name = "Handle"; handle.Parent = tool else
-        handle = Instance.new("Part"); handle.Name = "Handle"; handle.Size = Vector3.new(1,4,1); handle.Parent = tool
-    end
-    
+    local handle = Instance.new("Part")
+    handle.Name = "Handle"; handle.Size = Vector3.new(1,4,1); handle.Parent = tool
     tool.Activated:Connect(function()
         local t = mouse.Target
         if t and t.Parent:FindFirstChild("Humanoid") then
@@ -760,11 +930,11 @@ Button(P_Server, "Universal Ban Hammer", Theme.Danger, function()
             if p then p:Kick("BANNED.") end
         end
     end)
-    tool.Parent = backpack 
+    tool.Parent = backpack
     Library:Notify("Inventory", "Ban Hammer Added", 2)
 end)
 
--- // CURRENCY PAGE //
+-- CURRENCY
 local P_Cash = CreateTab("Currency")
 Section(P_Cash, "Scanner & Editor")
 local ScanBox = Input(P_Cash, "Current Value (e.g. 100)")
@@ -774,9 +944,8 @@ Button(P_Cash, "Scan & Modify", Theme.Accent, function()
     local target = tonumber(ScanBox.Text)
     local new = tonumber(EditBox.Text)
     if not target or not new then Library:Notify("Error", "Invalid Numbers", 2) return end
-    
     local count = 0
-    local function s(loc) 
+    local function s(loc)
         for _, v in pairs(loc:GetDescendants()) do
             if (v:IsA("IntValue") or v:IsA("NumberValue")) and v.Value == target then
                 v.Value = new; count += 1
@@ -800,11 +969,75 @@ Button(P_Cash, "Auto-Find 'Money' (+50)", Theme.Success, function()
     Library:Notify("Scanner", "Attempts made on " .. c .. " objects", 3)
 end)
 
+----------------------------------------------------------------
+-- // VISUALS (ESP) TAB //
+----------------------------------------------------------------
+local P_Visuals = CreateTab("Visuals")
+
+Section(P_Visuals, "Entity Tracking")
+
+local T_ESP = Toggle(P_Visuals, "ESP Master Switch", "espEnabled", false, function(v)
+    toggleESP(v)
+end)
+
+local T_ESPBoxes = Toggle(P_Visuals, "Show Highlight Box", "espBoxes", true, function(v)
+    state.espBoxes = v
+    refreshESPVisibility()
+end)
+
+local T_ESPNames = Toggle(P_Visuals, "Show Names", "espNames", true, function(v)
+    state.espNames = v
+    refreshESPVisibility()
+end)
+
+local T_ESPDist = Toggle(P_Visuals, "Show Distance", "espDistance", true, function(v)
+    state.espDistance = v
+    refreshESPVisibility()
+end)
+
+local T_ESPHealth = Toggle(P_Visuals, "Show Health", "espHealth", true, function(v)
+    state.espHealth = v
+    refreshESPVisibility()
+end)
+
+local T_ESPTeam = Toggle(P_Visuals, "Team Color Mode", "espTeamColor", false, function(v)
+    state.espTeamColor = v
+    -- Refresh colors on all active ESP objects
+    for p, container in pairs(espObjects) do
+        local col = getESPColor(p)
+        if container.highlight then
+            container.highlight.OutlineColor = col
+            container.highlight.FillColor = col
+        end
+        if container.nameLabel then
+            container.nameLabel.TextColor3 = col
+        end
+    end
+end)
+
+Section(P_Visuals, "Range")
+Slider(P_Visuals, "Max Distance (studs)", 50, 1000, 500, function(v)
+    state.espMaxDist = v
+end)
+
+Button(P_Visuals, "Refresh ESP", Theme.Accent, function()
+    if state.espEnabled then
+        clearAllESP()
+        for _, p in pairs(Players:GetPlayers()) do
+            buildESPForPlayer(p)
+        end
+        refreshESPVisibility()
+        Library:Notify("ESP", "ESP refreshed", 2)
+    else
+        Library:Notify("ESP", "Enable ESP first", 2)
+    end
+end)
+
+-- CREDITS
 local P_Creds = CreateTab("Credits")
 Library:Create("TextLabel", {
     Text = "Engineered by Smoothie",
-    Font = Enum.Font.GothamBold,
-    TextSize = 24,
+    Font = Enum.Font.GothamBold, TextSize = 24,
     TextColor3 = Theme.Accent,
     Size = UDim2.new(1,0,0,50),
     BackgroundTransparency = 1,
@@ -812,14 +1045,20 @@ Library:Create("TextLabel", {
 })
 Library:Create("TextLabel", {
     Text = "UI Redesign by OmniFlow",
-    Font = Enum.Font.Code,
-    TextSize = 14,
+    Font = Enum.Font.Code, TextSize = 14,
     TextColor3 = Theme.TextDim,
     Size = UDim2.new(1,0,0,30),
     BackgroundTransparency = 1,
     Parent = P_Creds
 })
-
+Library:Create("TextLabel", {
+    Text = "ESP System: Void Nebula Edition",
+    Font = Enum.Font.Code, TextSize = 13,
+    TextColor3 = Theme.TextDim,
+    Size = UDim2.new(1,0,0,30),
+    BackgroundTransparency = 1,
+    Parent = P_Creds
+})
 
 ----------------------------------------------------------------
 -- GLOBAL INPUTS
@@ -834,7 +1073,6 @@ local TogglesMap = {
 }
 
 UIS.InputBegan:Connect(function(input, gp)
-    -- Binding Listener
     if state.listening then
         if input.UserInputType == Enum.UserInputType.Keyboard then
             state.keybinds[state.listening] = input.KeyCode
@@ -846,28 +1084,28 @@ UIS.InputBegan:Connect(function(input, gp)
         return
     end
 
-    -- Toggle GUI
     if input.KeyCode == Enum.KeyCode.RightControl then
         ScreenGui.Enabled = not ScreenGui.Enabled
     end
 
     if gp then return end
 
-    -- Trigger Features
     for name, code in pairs(state.keybinds) do
         if input.KeyCode == code and TogglesMap[name] then
             local map = TogglesMap[name]
             if map.Action then
                 map.Action()
             elseif map.Func and map.Ref then
-                -- Toggle boolean state
-                local key = name:lower() == "invis" and "invis" or name:lower() == "walkspeed" and "wsEnabled" or name:lower() == "jumppower" and "jpEnabled" or name:lower()
+                local key = name:lower() == "invis" and "invis"
+                    or name:lower() == "walkspeed" and "wsEnabled"
+                    or name:lower() == "jumppower" and "jpEnabled"
+                    or name:lower()
                 state[key] = not state[key]
-                map.Ref(state[key]) -- Update Visuals
-                map.Func(state[key]) -- specific func call with bool
+                map.Ref(state[key])
+                map.Func(state[key])
             end
         end
     end
 end)
 
-Library:Notify("OmniFlow", "Smoothies Hub V2 Loaded", 3)
+Library:Notify("OmniFlow", "Smoothies Hub V2 + ESP Loaded", 3)
