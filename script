@@ -5938,10 +5938,10 @@ Toggle(P_Fisch, "Auto Shake", "autoShake", false, function(v)
         connections.autoShake = RunService.RenderStepped:Connect(function()
             if not state.autoShake then connections.autoShake:Disconnect() return end
             pcall(function()
-                local shakeRemote = ReplicatedStorage.resources.replicated.fishing.shakeui.safezone.shakeui.button.shake
-                if shakeRemote then
-                    shakeRemote:FireServer()
-                end
+                local handleBobber = ReplicatedStorage.shared.modules.fishing.rodresources.events.handlebobber
+                local breakBobber = ReplicatedStorage.shared.modules.fishing.rodresources.events.breakbobber
+                if handleBobber then handleBobber:FireServer() end
+                if breakBobber then breakBobber:FireServer() end
             end)
         end)
     else
@@ -5957,10 +5957,12 @@ Toggle(P_Fisch, "Auto Fish (Reel In)", "autoFish", false, function(v)
         connections.autoFish = RunService.RenderStepped:Connect(function()
             if not state.autoFish then connections.autoFish:Disconnect() return end
             pcall(function()
-                local reelRemote = ReplicatedStorage.packages.Net.RE.Reel.Finish
-                if reelRemote then
-                    reelRemote:FireServer()
-                end
+                local reelStart = ReplicatedStorage.packages.Net.RF["Reel"]["Start"]
+                local reelFinish = ReplicatedStorage.packages.Net.RE["Reel"]["Finish"]
+                local catchFinish = ReplicatedStorage.shared.modules.fishing.rodresources.events.catchfinish
+                if reelStart then pcall(function() reelStart:InvokeServer() end) end
+                if reelFinish then reelFinish:FireServer() end
+                if catchFinish then catchFinish:FireServer() end
             end)
         end)
     else
