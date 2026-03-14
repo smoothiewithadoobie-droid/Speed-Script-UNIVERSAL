@@ -54,6 +54,14 @@ local state = {
     espTeamColor = false,
     espMaxDist   = 500,
     liveMonitor  = false,
+
+    -- NEW: Blox Fruits feature toggles (add these here)
+    autoFarm       = false,
+    fastAttack     = false,
+    fruitESP       = false,
+    infiniteEnergy = false,
+    antiAFK        = false,
+
     keybinds = {
         Noclip    = Enum.KeyCode.X,
         Fly       = Enum.KeyCode.G,
@@ -61,14 +69,10 @@ local state = {
         Invis     = Enum.KeyCode.V,
         WalkSpeed = Enum.KeyCode.B,
         JumpPower = Enum.KeyCode.N
+        -- Do NOT put autoFarm/fastAttack/etc. here — they are not keybinds
     },
     listening = nil
 }
-
-local connections  = {}
-local flyObjects   = {}
-local invisStorage = {}
-
 ----------------------------------------------------------------
 -- LIBRARY
 ----------------------------------------------------------------
@@ -231,6 +235,114 @@ end
 local function updateJumpPower()
     local h = getHum()
     if h then h.UseJumpPower = true; h.JumpPower = state.jpEnabled and state.jumpPower or 50 end
+end
+-- BF-specific helpers
+local fruitESPObjects = {}
+local function toggleFruitESP(v)
+    state.fruitESP = v
+    if v then
+        for _, obj in pairs(workspace:GetDescendants()) do
+            if obj:IsA("Tool") and (obj.Name:match("Fruit$") or obj.Name:find("Fruit")) then
+                local hl = Instance.new("Highlight")
+                hl.FillColor = Color3.fromRGB(255, 215, 0) -- gold/yellow for fruits
+                hl.OutlineColor = Color3.fromRGB(255, 215, 0)
+                hl.FillTransparency = 0.4
+                hl.OutlineTransparency = 0
+                hl.Adornee = obj
+                hl.Parent = ESPFolder  -- reuses your existing ESPFolder
+                fruitESPObjects[obj] = hl
+            end
+        end
+        Library:Notify("Blox Fruits", "Fruit ESP Active", 2)
+    else
+        for _, hl in pairs(fruitESPObjects) do
+            if hl and hl.Parent then hl:Destroy() end
+        end
+        fruitESPObjects = {}
+        Library:Notify("Blox Fruits", "Fruit ESP Disabled", 2)
+    end
+end
+
+local function toggleFastAttack(v)
+    state.fastAttack = v
+    if v then
+        connections.fastAttack = RunService.RenderStepped:Connect(function()
+            if not state.fastAttack then return end
+            pcall(function()
+                game:GetService("VirtualUser"):ClickButton1(Vector2.new())
+            end)
+        end)
+        Library:Notify("Blox Fruits", "Fast Attack Enabled", 2)
+    else
+        if connections.fastAttack then connections.fastAttack:Disconnect() end
+        Library:Notify("Blox Fruits", "Fast Attack Disabled", 2)
+    end
+end
+
+local function toggleAntiAFK(v)
+    state.antiAFK = v
+    if v then
+        connections.antiAFK = RunService.Heartbeat:Connect(function()
+            if not state.antiAFK then return end
+            pcall(function()
+                local vu = game:GetService("VirtualUser")
+                vu:CaptureController()
+                vu:ClickButton2(Vector2.new())
+            end)
+        end)
+        Library:Notify("Blox Fruits", "Anti-AFK Enabled", 2)
+    else
+        if connections.antiAFK then connections.antiAFK:Disconnect() end
+        Library:Notify("Blox Fruits", "Anti-AFK Disabled", 2)
+    end
+end
+
+local function toggleInfiniteEnergy(v)
+    state.infiniteEnergy = v
+    if v then
+        task.spawn(function()
+            while state.infiniteEnergy do
+                pcall(function()
+                    local energyObj = player:FindFirstChild("Energy") 
+                        or (player.Character and player.Character:FindFirstChild("Energy"))
+                    if energyObj and energyObj:IsA("NumberValue") then
+                        energyObj.Value = energyObj.MaxValue or 1000
+                    end
+                end)
+                task.wait(0.5)
+            end
+        end)
+        Library:Notify("Blox Fruits", "Infinite Energy Attempt Active (may get resynced by server)", 3)
+    else
+        Library:Notify("Blox Fruits", "Infinite Energy Disabled", 2)
+    end
+end
+
+local function startAutoFarm()
+    if state.autoFarm then
+        task.spawn(function()
+            while state.autoFarm do
+                pcall(function()
+                    local char = player.Character
+                    if char then
+                        local hrp = char:FindFirstChild("HumanoidRootPart")
+                        if hrp then
+                            -- Find first alive mob (very basic — improve later with remotes)
+                            for _, mob in pairs(workspace.Enemies:GetChildren()) do
+                                local hum = mob:FindFirstChild("Humanoid")
+                                if hum and hum.Health > 0 then
+                                    hrp.CFrame = mob:FindFirstChild("HumanoidRootPart").CFrame * CFrame.new(0, 5, 0)
+                                    break
+                                end
+                            end
+                        end
+                    end
+                end)
+                task.wait(0.3)  -- adjust delay for speed/safety
+            end
+        end)
+        Library:Notify("Blox Fruits", "Auto Farm Loop Started (basic chase)", 3)
+    end
 end
 
 ----------------------------------------------------------------
@@ -1211,6 +1323,78 @@ Button(P_Remotes, "Copy All Paths", nil, function()
     pcall(setclipboard, table.concat(lines,"\n"))
     Library:Notify("Remotes", "Copied "..#remoteLog.." paths", 2)
 end)
+
+-- BLOXFRUITS
+-- BLOX FRUITS TAB (styled to match your GUI)
+local P_BloxFruits = CreateTab("Blox Fruits")
+
+Section(P_BloxFruits, "Blox Fruits Features")
+
+Library:Create("TextLabel", {
+    Text = "Note: All features are client-side only. Server validates most currency/mastery actions.\nHeavy use may trigger anti-cheat — use alt account.",
+    Font = Enum.Font.Gotham, TextSize = 11, TextColor3 = Theme.Danger,
+    Size = UDim2.new(0.98,0,0,50), BackgroundTransparency = 1,
+    TextWrapped = true, TextXAlignment = Enum.TextXAlignment.Left,
+    Parent = P_BloxFruits
+})
+
+Toggle(P_BloxFruits, "Auto Farm (Basic Mob Chase)", "autoFarm", false, function(v)
+    state.autoFarm = v
+    if v then startAutoFarm() end
+end)
+
+Toggle(P_BloxFruits, "Fast Attack (Spam Clicks)", "fastAttack", false, toggleFastAttack)
+
+Toggle(P_BloxFruits, "Fruit ESP / Sniper", "fruitESP", false, toggleFruitESP)
+
+Toggle(P_BloxFruits, "Infinite Energy (Local Attempt)", "infiniteEnergy", false, toggleInfiniteEnergy)
+
+Toggle(P_BloxFruits, "Anti-AFK (Auto Movement)", "antiAFK", false, toggleAntiAFK)
+
+Section(P_BloxFruits, "Quick Teleports")
+
+Button(P_BloxFruits, "Teleport to Nearest Fruit (if visible)", Theme.Accent, function()
+    local closest, minDist = nil, math.huge
+    local hrp = getHRP()
+    if not hrp then 
+        Library:Notify("Blox Fruits", "No character found", 2)
+        return 
+    end
+    
+    for _, obj in pairs(workspace:GetDescendants()) do
+        if obj:IsA("Tool") and (obj.Name:match("Fruit$") or obj.Name:find("Fruit")) then
+            local handle = obj:FindFirstChild("Handle")
+            if handle then
+                local dist = (handle.Position - hrp.Position).Magnitude
+                if dist < minDist then
+                    minDist = dist
+                    closest = obj
+                end
+            end
+        end
+    end
+    
+    if closest and closest:FindFirstChild("Handle") then
+        hrp.CFrame = CFrame.new(closest.Handle.Position + Vector3.new(0,5,0))
+        Library:Notify("Blox Fruits", "Teleported to nearest fruit", 2)
+    else
+        Library:Notify("Blox Fruits", "No fruit found nearby", 2)
+    end
+end)
+
+-- Matching your Currency/Remotes style: framed tips panel with swirling stroke
+local tipsFrame = Library:Create("Frame", {
+    Size = UDim2.new(0.98,0,0,100), BackgroundColor3 = Theme.DarkPanel, Parent = P_BloxFruits
+}, {Library:MakeCorner(6)})
+Library:AddSwirlingStroke(tipsFrame, 1)
+
+Library:Create("TextLabel", {
+    Text = "Pro Tip: For real infinite Beli / Mastery / Fruit Rain\n→ Go to Remotes tab\n→ Enable Live Scanner\n→ Perform actions that give rewards\n→ Find the remote (e.g. AddBeli, MasteryEvent)\n→ Fire it repeatedly with huge numbers",
+    Font = Enum.Font.Gotham, TextSize = 11, TextColor3 = Theme.TextDim,
+    Size = UDim2.new(1,-10,1,-10), Position = UDim2.fromOffset(5,5),
+    BackgroundTransparency = 1, TextWrapped = true, TextXAlignment = Enum.TextXAlignment.Left,
+    Parent = tipsFrame
+})
 
 -- CREDITS
 local P_Creds = CreateTab("Credits")
