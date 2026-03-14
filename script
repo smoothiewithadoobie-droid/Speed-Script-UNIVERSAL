@@ -5911,6 +5911,18 @@ local P_Fisch = CreateTab("Fisch")
 
 Section(P_Fisch, "Auto Fishing")
 
+local function getEquippedRod()
+    local backpack = Players.LocalPlayer.Backpack
+    for _, tool in ipairs(backpack:GetChildren()) do
+        local events = tool:FindFirstChild("events")
+        if events and events:FindFirstChild("castAsync") then
+            local values = tool:FindFirstChild("values")
+            return events, values
+        end
+    end
+    return nil, nil
+end
+
 Toggle(P_Fisch, "Auto Cast", "autoCast", false, function(v)
     state.autoCast = v
     if v then
@@ -5918,9 +5930,10 @@ Toggle(P_Fisch, "Auto Cast", "autoCast", false, function(v)
         connections.autoCast = RunService.Heartbeat:Connect(function()
             if not state.autoCast then connections.autoCast:Disconnect() return end
             pcall(function()
-                local castRemote = ReplicatedStorage.shared.modules.fishing.rodresources.events.castAsync
-                if castRemote then
-                    castRemote:FireServer()
+                local events, values = getEquippedRod()
+                local alreadyCast = values and values:FindFirstChild("casted") and values.casted.Value
+                if events and events.castAsync and not alreadyCast then
+                    events.castAsync:FireServer()
                 end
             end)
             task.wait(2)
@@ -5938,10 +5951,14 @@ Toggle(P_Fisch, "Auto Shake", "autoShake", false, function(v)
         connections.autoShake = RunService.RenderStepped:Connect(function()
             if not state.autoShake then connections.autoShake:Disconnect() return end
             pcall(function()
-                local handleBobber = ReplicatedStorage.shared.modules.fishing.rodresources.events.handlebobber
-                local breakBobber = ReplicatedStorage.shared.modules.fishing.rodresources.events.breakbobber
-                if handleBobber then handleBobber:FireServer() end
-                if breakBobber then breakBobber:FireServer() end
+                local _, values = getEquippedRod()
+                local hasBite = values and values:FindFirstChild("bite") and values.bite.Value
+                if hasBite then
+                    local shakeRemote = ReplicatedStorage.resources.replicated.fishing.shakeui.safezone.shakeui.button.shake
+                    if shakeRemote then
+                        shakeRemote:FireServer()
+                    end
+                end
             end)
         end)
     else
@@ -5957,12 +5974,17 @@ Toggle(P_Fisch, "Auto Fish (Reel In)", "autoFish", false, function(v)
         connections.autoFish = RunService.RenderStepped:Connect(function()
             if not state.autoFish then connections.autoFish:Disconnect() return end
             pcall(function()
-                local reelStart = ReplicatedStorage.packages.Net.RF["Reel"]["Start"]
-                local reelFinish = ReplicatedStorage.packages.Net.RE["Reel"]["Finish"]
-                local catchFinish = ReplicatedStorage.shared.modules.fishing.rodresources.events.catchfinish
-                if reelStart then pcall(function() reelStart:InvokeServer() end) end
-                if reelFinish then reelFinish:FireServer() end
-                if catchFinish then catchFinish:FireServer() end
+                local events, values = getEquippedRod()
+                local isCast = values and values:FindFirstChild("casted") and values.casted.Value
+                if isCast then
+                    local reelFinished = ReplicatedStorage.events.reelfinished
+                    if events and events.catchfinish then
+                        events.catchfinish:FireServer()
+                    end
+                    if reelFinished then
+                        reelFinished:FireServer()
+                    end
+                end
             end)
         end)
     else
