@@ -46,7 +46,6 @@ local state = {
     jumpPower = 50,
     wsEnabled = false,
     jpEnabled = false,
-    -- ESP State
     espEnabled = false,
     espBoxes = true,
     espNames = true,
@@ -55,10 +54,10 @@ local state = {
     espTeamColor = false,
     espMaxDist = 500,
     keybinds = {
-        Noclip = Enum.KeyCode.X,
-        Fly = Enum.KeyCode.G,
-        Teleport = Enum.KeyCode.F,
-        Invis = Enum.KeyCode.V,
+        Noclip    = Enum.KeyCode.X,
+        Fly       = Enum.KeyCode.G,
+        Teleport  = Enum.KeyCode.F,
+        Invis     = Enum.KeyCode.V,
         WalkSpeed = Enum.KeyCode.B,
         JumpPower = Enum.KeyCode.N
     },
@@ -121,7 +120,7 @@ function Library:Notify(title, msg, duration)
     Library:AddSwirlingStroke(card, 1.5)
     local tFrame = Library:Create("Frame", {
         Size = UDim2.new(1, -20, 1, -10),
-        Position = UDim2.fromOffset(10,5),
+        Position = UDim2.fromOffset(10, 5),
         BackgroundTransparency = 1,
         Parent = card
     })
@@ -148,8 +147,8 @@ end
 -- GAMEPLAY LOGIC
 ----------------------------------------------------------------
 local function getChar() return player.Character or player.CharacterAdded:Wait() end
-local function getHRP() return getChar():WaitForChild("HumanoidRootPart", 5) end
-local function getHum() return getChar():WaitForChild("Humanoid", 5) end
+local function getHRP()  return getChar():WaitForChild("HumanoidRootPart", 5) end
+local function getHum()  return getChar():WaitForChild("Humanoid", 5) end
 
 local function toggleNoclip(v)
     state.noclip = v
@@ -251,31 +250,25 @@ local ESPFolder = Instance.new("Folder")
 ESPFolder.Name = "SmoothiesESP"
 ESPFolder.Parent = CoreGui
 
-local espObjects = {} -- [player] = { highlight, billboardGui, ... }
+local espObjects = {}
 
 local function getESPColor(p)
-    if state.espTeamColor and p.Team then
-        return p.TeamColor.Color
-    end
-    -- Cycle accent/pink per player for visual variety
+    if state.espTeamColor and p.Team then return p.TeamColor.Color end
     local colors = {
-        Color3.fromRGB(168, 85, 247),  -- Purple
-        Color3.fromRGB(236, 72, 153),  -- Pink
-        Color3.fromRGB(56, 189, 248),  -- Cyan
-        Color3.fromRGB(74, 222, 128),  -- Green
+        Color3.fromRGB(168, 85, 247),
+        Color3.fromRGB(236, 72, 153),
+        Color3.fromRGB(56, 189, 248),
+        Color3.fromRGB(74, 222, 128),
     }
-    local idx = (p.UserId % #colors) + 1
-    return colors[idx]
+    return colors[(p.UserId % #colors) + 1]
 end
 
 local function buildESPForPlayer(p)
     if p == player then return end
-    if espObjects[p] then return end -- already built
-
+    if espObjects[p] then return end
     local container = {}
     espObjects[p] = container
 
-    -- Highlight (SelectionBox style via Highlight instance - works in supported executors)
     local highlight = Instance.new("Highlight")
     highlight.Name = "ESP_Highlight_" .. p.Name
     highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
@@ -286,7 +279,6 @@ local function buildESPForPlayer(p)
     highlight.Parent = ESPFolder
     container.highlight = highlight
 
-    -- BillboardGui for name/distance/health text
     local bbGui = Instance.new("BillboardGui")
     bbGui.Name = "ESP_Billboard_" .. p.Name
     bbGui.Size = UDim2.fromOffset(120, 50)
@@ -296,11 +288,8 @@ local function buildESPForPlayer(p)
     bbGui.Parent = ESPFolder
     container.bbGui = bbGui
 
-    -- Name label
     local nameLabel = Instance.new("TextLabel")
-    nameLabel.Name = "NameLabel"
     nameLabel.Size = UDim2.new(1, 0, 0, 20)
-    nameLabel.Position = UDim2.new(0, 0, 0, 0)
     nameLabel.BackgroundTransparency = 1
     nameLabel.Text = p.DisplayName
     nameLabel.TextColor3 = getESPColor(p)
@@ -311,9 +300,7 @@ local function buildESPForPlayer(p)
     nameLabel.Parent = bbGui
     container.nameLabel = nameLabel
 
-    -- Distance label
     local distLabel = Instance.new("TextLabel")
-    distLabel.Name = "DistLabel"
     distLabel.Size = UDim2.new(1, 0, 0, 16)
     distLabel.Position = UDim2.new(0, 0, 0, 20)
     distLabel.BackgroundTransparency = 1
@@ -326,9 +313,7 @@ local function buildESPForPlayer(p)
     distLabel.Parent = bbGui
     container.distLabel = distLabel
 
-    -- Health label
     local hpLabel = Instance.new("TextLabel")
-    hpLabel.Name = "HPLabel"
     hpLabel.Size = UDim2.new(1, 0, 0, 14)
     hpLabel.Position = UDim2.new(0, 0, 0, 36)
     hpLabel.BackgroundTransparency = 1
@@ -341,7 +326,6 @@ local function buildESPForPlayer(p)
     hpLabel.Parent = bbGui
     container.hpLabel = hpLabel
 
-    -- Attach billboard to character root if available
     local function attachToChar(char)
         if not char then return end
         local hrp = char:FindFirstChild("HumanoidRootPart")
@@ -355,7 +339,6 @@ local function buildESPForPlayer(p)
     p.CharacterAdded:Connect(function(char)
         task.wait(0.5)
         attachToChar(char)
-        -- Refresh color in case team changed
         highlight.OutlineColor = getESPColor(p)
         highlight.FillColor = getESPColor(p)
         nameLabel.TextColor3 = getESPColor(p)
@@ -371,77 +354,42 @@ local function removeESPForPlayer(p)
 end
 
 local function clearAllESP()
-    for p, _ in pairs(espObjects) do
-        removeESPForPlayer(p)
-    end
+    for p in pairs(espObjects) do removeESPForPlayer(p) end
 end
 
 local function refreshESPVisibility()
-    for p, container in pairs(espObjects) do
-        if container.highlight then
-            container.highlight.Enabled = state.espBoxes
-        end
-        if container.nameLabel then
-            container.nameLabel.Visible = state.espNames
-        end
-        if container.distLabel then
-            container.distLabel.Visible = state.espDistance
-        end
-        if container.hpLabel then
-            container.hpLabel.Visible = state.espHealth
-        end
+    for _, container in pairs(espObjects) do
+        if container.highlight  then container.highlight.Enabled       = state.espBoxes    end
+        if container.nameLabel  then container.nameLabel.Visible        = state.espNames    end
+        if container.distLabel  then container.distLabel.Visible        = state.espDistance end
+        if container.hpLabel    then container.hpLabel.Visible          = state.espHealth   end
     end
 end
 
--- Update loop: distance + health
 RunService.RenderStepped:Connect(function()
     if not state.espEnabled then return end
-
     local myHRP = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
-
     for p, container in pairs(espObjects) do
-        if not p or not p.Parent then
-            removeESPForPlayer(p)
-            continue
-        end
-
+        if not p or not p.Parent then removeESPForPlayer(p) continue end
         local char = p.Character
         if not char then continue end
-
         local hrp = char:FindFirstChild("HumanoidRootPart")
         local hum = char:FindFirstChildOfClass("Humanoid")
-
-        -- Distance
         if hrp and myHRP then
             local dist = math.floor((hrp.Position - myHRP.Position).Magnitude)
-            if dist > state.espMaxDist then
-                -- Hide beyond max distance
-                if container.highlight then container.highlight.Enabled = false end
-                if container.bbGui then container.bbGui.Enabled = false end
-                continue
-            else
-                if container.highlight then container.highlight.Enabled = state.espBoxes end
-                if container.bbGui then container.bbGui.Enabled = true end
-            end
-            if container.distLabel and state.espDistance then
+            local inRange = dist <= state.espMaxDist
+            if container.highlight then container.highlight.Enabled = inRange and state.espBoxes end
+            if container.bbGui     then container.bbGui.Enabled     = inRange end
+            if inRange and container.distLabel and state.espDistance then
                 container.distLabel.Text = dist .. " studs"
             end
         end
-
-        -- Health
         if hum and container.hpLabel and state.espHealth then
-            local hp = math.floor(hum.Health)
-            local maxHp = math.floor(hum.MaxHealth)
             local ratio = hum.Health / math.max(hum.MaxHealth, 1)
-            container.hpLabel.Text = "HP: " .. hp .. "/" .. maxHp
-            -- Color: green → yellow → red
-            if ratio > 0.6 then
-                container.hpLabel.TextColor3 = Theme.Success
-            elseif ratio > 0.3 then
-                container.hpLabel.TextColor3 = Color3.fromRGB(250, 204, 21)
-            else
-                container.hpLabel.TextColor3 = Theme.Danger
-            end
+            container.hpLabel.Text = "HP: " .. math.floor(hum.Health) .. "/" .. math.floor(hum.MaxHealth)
+            container.hpLabel.TextColor3 = ratio > 0.6 and Theme.Success
+                or ratio > 0.3 and Color3.fromRGB(250, 204, 21)
+                or Theme.Danger
         end
     end
 end)
@@ -449,10 +397,7 @@ end)
 local function toggleESP(v)
     state.espEnabled = v
     if v then
-        -- Build for all current players
-        for _, p in pairs(Players:GetPlayers()) do
-            buildESPForPlayer(p)
-        end
+        for _, p in pairs(Players:GetPlayers()) do buildESPForPlayer(p) end
         refreshESPVisibility()
         Library:Notify("ESP", "Entity tracking active", 2)
     else
@@ -461,21 +406,13 @@ local function toggleESP(v)
     end
 end
 
--- Auto-manage players joining/leaving
 Players.PlayerAdded:Connect(function(p)
-    if state.espEnabled then
-        task.wait(1)
-        buildESPForPlayer(p)
-        refreshESPVisibility()
-    end
+    if state.espEnabled then task.wait(1); buildESPForPlayer(p); refreshESPVisibility() end
 end)
-
-Players.PlayerRemoving:Connect(function(p)
-    removeESPForPlayer(p)
-end)
+Players.PlayerRemoving:Connect(function(p) removeESPForPlayer(p) end)
 
 ----------------------------------------------------------------
--- MAIN UI CONSTRUCTION
+-- MAIN UI
 ----------------------------------------------------------------
 local ScreenGui = Library:Create("ScreenGui", {
     Name = "SmoothiesHub_Redux",
@@ -501,7 +438,6 @@ local MainFrame = Library:Create("Frame", {
     BackgroundColor3 = Theme.Background,
     Parent = ScreenGui
 }, {Library:MakeCorner(12)})
-
 Library:AddSwirlingStroke(MainFrame, 2.5)
 
 local Header = Library:Create("Frame", {
@@ -510,27 +446,16 @@ local Header = Library:Create("Frame", {
     BackgroundTransparency = 0.5,
     Parent = MainFrame
 }, {Library:MakeCorner(12)})
-
 Library:Create("Frame", {
-    Size = UDim2.new(1, 0, 0, 10),
-    Position = UDim2.new(0,0,1,-10),
-    BackgroundColor3 = Theme.Sidebar,
-    BackgroundTransparency = 0.5,
-    BorderSizePixel = 0,
-    Parent = Header
+    Size = UDim2.new(1, 0, 0, 10), Position = UDim2.new(0,0,1,-10),
+    BackgroundColor3 = Theme.Sidebar, BackgroundTransparency = 0.5,
+    BorderSizePixel = 0, Parent = Header
 })
-
 Library:Create("TextLabel", {
-    Text = "SMOOTHIES <font color='#a855f7'>HUB</font> V2",
-    RichText = true,
-    Font = Enum.Font.GothamBlack,
-    TextSize = 22,
-    TextColor3 = Theme.Text,
-    Size = UDim2.new(0, 200, 1, 0),
-    Position = UDim2.fromOffset(20, 0),
-    BackgroundTransparency = 1,
-    TextXAlignment = Enum.TextXAlignment.Left,
-    Parent = Header
+    Text = "SMOOTHIES <font color='#a855f7'>HUB</font> V2", RichText = true,
+    Font = Enum.Font.GothamBlack, TextSize = 22, TextColor3 = Theme.Text,
+    Size = UDim2.new(0, 200, 1, 0), Position = UDim2.fromOffset(20, 0),
+    BackgroundTransparency = 1, TextXAlignment = Enum.TextXAlignment.Left, Parent = Header
 })
 
 local CloseBtn = Library:Create("TextButton", {
@@ -589,10 +514,8 @@ local SidebarLayout = Library:Create("Frame", {
     BackgroundTransparency = 1,
     Parent = Sidebar
 })
-
 Library:Create("UIListLayout", {Padding = UDim.new(0, 8), Parent = SidebarLayout})
 
-local Pages = {}
 local CurrentTab = nil
 
 local function CreateTab(name)
@@ -604,20 +527,22 @@ local function CreateTab(name)
         Visible = false,
         Parent = ContentArea
     })
-    Library:Create("UIListLayout", {Padding = UDim.new(0, 10), HorizontalAlignment = Enum.HorizontalAlignment.Center, Parent = PageFrame})
+    Library:Create("UIListLayout", {
+        Padding = UDim.new(0, 10),
+        HorizontalAlignment = Enum.HorizontalAlignment.Center,
+        Parent = PageFrame
+    })
 
     local TabBtn = Library:Create("TextButton", {
-        Text = name,
-        Font = Enum.Font.GothamMedium,
-        TextSize = 14,
-        TextColor3 = Theme.TextDim,
-        BackgroundColor3 = Theme.DarkPanel,
-        Size = UDim2.new(1, 0, 0, 35),
-        Parent = SidebarLayout
+        Text = name, Font = Enum.Font.GothamMedium, TextSize = 14,
+        TextColor3 = Theme.TextDim, BackgroundColor3 = Theme.DarkPanel,
+        Size = UDim2.new(1, 0, 0, 35), Parent = SidebarLayout
     }, {Library:MakeCorner(6)})
 
     TabBtn.MouseButton1Click:Connect(function()
-        for _, p in pairs(ContentArea:GetChildren()) do if p:IsA("ScrollingFrame") then p.Visible = false end end
+        for _, p in pairs(ContentArea:GetChildren()) do
+            if p:IsA("ScrollingFrame") then p.Visible = false end
+        end
         PageFrame.Visible = true
         for _, b in pairs(SidebarLayout:GetChildren()) do
             if b:IsA("TextButton") then
@@ -633,20 +558,15 @@ local function CreateTab(name)
         TabBtn.BackgroundColor3 = Theme.Accent
         TabBtn.TextColor3 = Theme.Text
     end
-
     return PageFrame
 end
 
--- COMPONENT BUILDERS
+-- SHARED COMPONENTS
 local function Section(parent, title)
     Library:Create("TextLabel", {
-        Text = title:upper(),
-        Font = Enum.Font.GothamBold,
-        TextSize = 11,
-        TextColor3 = Theme.TextDim,
-        Size = UDim2.new(0.95, 0, 0, 20),
-        BackgroundTransparency = 1,
-        TextXAlignment = Enum.TextXAlignment.Left,
+        Text = title:upper(), Font = Enum.Font.GothamBold, TextSize = 11,
+        TextColor3 = Theme.TextDim, Size = UDim2.new(0.95, 0, 0, 20),
+        BackgroundTransparency = 1, TextXAlignment = Enum.TextXAlignment.Left,
         Parent = parent
     })
 end
@@ -654,18 +574,14 @@ end
 local function Toggle(parent, text, featureName, default, callback)
     local Holder = Library:Create("Frame", {
         Size = UDim2.new(0.98, 0, 0, 45),
-        BackgroundColor3 = Theme.DarkPanel,
-        Parent = parent
+        BackgroundColor3 = Theme.DarkPanel, Parent = parent
     }, {Library:MakeCorner(6)})
 
     Library:Create("TextLabel", {
         Text = text, Font = Enum.Font.GothamSemibold, TextSize = 14,
-        TextColor3 = Theme.Text,
-        Size = UDim2.new(0.6, 0, 1, 0),
-        Position = UDim2.fromOffset(15, 0),
-        BackgroundTransparency = 1,
-        TextXAlignment = Enum.TextXAlignment.Left,
-        Parent = Holder
+        TextColor3 = Theme.Text, Size = UDim2.new(0.6, 0, 1, 0),
+        Position = UDim2.fromOffset(15, 0), BackgroundTransparency = 1,
+        TextXAlignment = Enum.TextXAlignment.Left, Parent = Holder
     })
 
     local Btn = Library:Create("TextButton", {
@@ -677,9 +593,8 @@ local function Toggle(parent, text, featureName, default, callback)
 
     local Circle = Library:Create("Frame", {
         Size = UDim2.fromOffset(16, 16),
-        Position = default and UDim2.new(1, -18, 0.5, -8) or UDim2.new(0, 2, 0.5, -8),
-        BackgroundColor3 = Theme.Text,
-        Parent = Btn
+        Position = default and UDim2.new(1,-18,0.5,-8) or UDim2.new(0,2,0.5,-8),
+        BackgroundColor3 = Theme.Text, Parent = Btn
     }, {Library:MakeCorner(100)})
 
     local KeyBtn
@@ -687,29 +602,26 @@ local function Toggle(parent, text, featureName, default, callback)
         KeyBtn = Library:Create("TextButton", {
             Text = "[" .. state.keybinds[featureName].Name .. "]",
             Font = Enum.Font.Code, TextSize = 11, TextColor3 = Theme.TextDim,
-            BackgroundTransparency = 1,
-            Size = UDim2.fromOffset(30, 20),
-            Position = UDim2.new(1, -90, 0.5, -10),
-            Parent = Holder
+            BackgroundTransparency = 1, Size = UDim2.fromOffset(30, 20),
+            Position = UDim2.new(1, -90, 0.5, -10), Parent = Holder
         })
     end
 
     Btn.MouseButton1Click:Connect(function()
-        local key = featureName:lower() == "invis" and "invis"
-            or featureName:lower() == "walkspeed" and "wsEnabled"
-            or featureName:lower() == "jumppower" and "jpEnabled"
+        local key = featureName:lower() == "invis"      and "invis"
+            or featureName:lower() == "walkspeed"        and "wsEnabled"
+            or featureName:lower() == "jumppower"        and "jpEnabled"
             or featureName:lower()
         state[key] = not state[key]
         local active = state[key]
         Library:Tween(Btn, {BackgroundColor3 = active and Theme.Accent or Color3.fromRGB(40,40,45)})
-        Library:Tween(Circle, {Position = active and UDim2.new(1, -18, 0.5, -8) or UDim2.new(0, 2, 0.5, -8)})
+        Library:Tween(Circle, {Position = active and UDim2.new(1,-18,0.5,-8) or UDim2.new(0,2,0.5,-8)})
         callback(active)
     end)
 
     if KeyBtn then
         KeyBtn.MouseButton1Click:Connect(function()
-            KeyBtn.Text = "[...]"
-            KeyBtn.TextColor3 = Theme.Accent
+            KeyBtn.Text = "[...]"; KeyBtn.TextColor3 = Theme.Accent
             state.listening = featureName
         end)
     end
@@ -717,7 +629,7 @@ local function Toggle(parent, text, featureName, default, callback)
     return {
         Update = function(val)
             Library:Tween(Btn, {BackgroundColor3 = val and Theme.Accent or Color3.fromRGB(40,40,45)})
-            Library:Tween(Circle, {Position = val and UDim2.new(1, -18, 0.5, -8) or UDim2.new(0, 2, 0.5, -8)})
+            Library:Tween(Circle, {Position = val and UDim2.new(1,-18,0.5,-8) or UDim2.new(0,2,0.5,-8)})
         end,
         UpdateKey = function(k)
             if KeyBtn then KeyBtn.Text = "["..k.Name.."]"; KeyBtn.TextColor3 = Theme.TextDim end
@@ -728,75 +640,52 @@ end
 local function Slider(parent, text, min, max, default, callback)
     local Holder = Library:Create("Frame", {
         Size = UDim2.new(0.98, 0, 0, 60),
-        BackgroundColor3 = Theme.DarkPanel,
-        Parent = parent
+        BackgroundColor3 = Theme.DarkPanel, Parent = parent
     }, {Library:MakeCorner(6)})
-
     Library:Create("TextLabel", {
         Text = text, Font = Enum.Font.GothamSemibold, TextSize = 14,
-        TextColor3 = Theme.Text,
-        Position = UDim2.fromOffset(15, 12),
-        Size = UDim2.fromOffset(150, 20),
-        BackgroundTransparency = 1,
-        TextXAlignment = Enum.TextXAlignment.Left,
-        Parent = Holder
+        TextColor3 = Theme.Text, Position = UDim2.fromOffset(15, 12),
+        Size = UDim2.fromOffset(150, 20), BackgroundTransparency = 1,
+        TextXAlignment = Enum.TextXAlignment.Left, Parent = Holder
     })
-
     local ValLabel = Library:Create("TextLabel", {
         Text = tostring(default), Font = Enum.Font.Code, TextSize = 13,
-        TextColor3 = Theme.Accent,
-        Position = UDim2.new(1, -65, 0, 12),
-        Size = UDim2.fromOffset(50, 20),
-        BackgroundTransparency = 1,
-        TextXAlignment = Enum.TextXAlignment.Right,
-        Parent = Holder
+        TextColor3 = Theme.Accent, Position = UDim2.new(1, -65, 0, 12),
+        Size = UDim2.fromOffset(50, 20), BackgroundTransparency = 1,
+        TextXAlignment = Enum.TextXAlignment.Right, Parent = Holder
     })
-
     local SlideBg = Library:Create("Frame", {
-        Size = UDim2.new(0.9, 0, 0, 4),
-        Position = UDim2.new(0.05, 0, 0.7, 0),
-        BackgroundColor3 = Theme.Sidebar,
-        Parent = Holder
+        Size = UDim2.new(0.9, 0, 0, 4), Position = UDim2.new(0.05, 0, 0.7, 0),
+        BackgroundColor3 = Theme.Sidebar, Parent = Holder
     }, {Library:MakeCorner(4)})
-
     local Fill = Library:Create("Frame", {
-        Size = UDim2.fromScale((default - min) / (max - min), 1),
-        BackgroundColor3 = Theme.Accent,
-        Parent = SlideBg
+        Size = UDim2.fromScale((default-min)/(max-min), 1),
+        BackgroundColor3 = Theme.Accent, Parent = SlideBg
     }, {Library:MakeCorner(4)})
-
     local Trigger = Library:Create("TextButton", {
-        Size = UDim2.fromScale(1,1), BackgroundTransparency = 1, Text="", Parent = SlideBg
+        Size = UDim2.fromScale(1,1), BackgroundTransparency = 1, Text = "", Parent = SlideBg
     })
-
     local function update(input)
         local pos = math.clamp((input.Position.X - SlideBg.AbsolutePosition.X) / SlideBg.AbsoluteSize.X, 0, 1)
-        local val = math.floor(min + (max - min) * pos)
-        Fill.Size = UDim2.fromScale(pos, 1)
-        ValLabel.Text = tostring(val)
-        callback(val)
+        local val = math.floor(min + (max-min) * pos)
+        Fill.Size = UDim2.fromScale(pos, 1); ValLabel.Text = tostring(val); callback(val)
     end
-
     local d = false
-    Trigger.InputBegan:Connect(function(i) if i.UserInputType == Enum.UserInputType.MouseButton1 then d=true update(i) end end)
+    Trigger.InputBegan:Connect(function(i) if i.UserInputType == Enum.UserInputType.MouseButton1 then d=true; update(i) end end)
     UIS.InputEnded:Connect(function(i) if i.UserInputType == Enum.UserInputType.MouseButton1 then d=false end end)
     UIS.InputChanged:Connect(function(i) if d and i.UserInputType == Enum.UserInputType.MouseMovement then update(i) end end)
-
     return {
         Set = function(v)
-            Fill.Size = UDim2.fromScale((v-min)/(max-min), 1)
-            ValLabel.Text = tostring(v)
+            Fill.Size = UDim2.fromScale((v-min)/(max-min), 1); ValLabel.Text = tostring(v)
         end
     }
 end
 
 local function Button(parent, text, color, callback)
     local Btn = Library:Create("TextButton", {
-        Size = UDim2.new(0.98, 0, 0, 40),
-        BackgroundColor3 = color or Theme.DarkPanel,
-        Text = text, Font = Enum.Font.GothamBold,
-        TextColor3 = Theme.Text, TextSize = 14,
-        Parent = parent
+        Size = UDim2.new(0.98, 0, 0, 40), BackgroundColor3 = color or Theme.DarkPanel,
+        Text = text, Font = Enum.Font.GothamBold, TextColor3 = Theme.Text,
+        TextSize = 14, Parent = parent
     }, {Library:MakeCorner(6)})
     Btn.MouseEnter:Connect(function() Library:Tween(Btn, {BackgroundColor3 = Theme.AccentDim}) end)
     Btn.MouseLeave:Connect(function() Library:Tween(Btn, {BackgroundColor3 = color or Theme.DarkPanel}) end)
@@ -806,23 +695,18 @@ end
 
 local function Input(parent, placeholder)
     local Container = Library:Create("Frame", {
-        Size = UDim2.new(0.98, 0, 0, 40),
-        BackgroundColor3 = Theme.DarkPanel,
-        Parent = parent
+        Size = UDim2.new(0.98, 0, 0, 40), BackgroundColor3 = Theme.DarkPanel, Parent = parent
     }, {Library:MakeCorner(6), Library:Create("UIStroke", {Color = Theme.Sidebar, Thickness = 1})})
     return Library:Create("TextBox", {
-        Size = UDim2.new(1, -20, 1, 0),
-        Position = UDim2.fromOffset(10, 0),
-        BackgroundTransparency = 1,
-        Text = "", PlaceholderText = placeholder,
+        Size = UDim2.new(1, -20, 1, 0), Position = UDim2.fromOffset(10, 0),
+        BackgroundTransparency = 1, Text = "", PlaceholderText = placeholder,
         TextColor3 = Theme.Text, PlaceholderColor3 = Theme.TextDim,
-        Font = Enum.Font.Gotham, TextSize = 14,
-        Parent = Container
+        Font = Enum.Font.Gotham, TextSize = 14, Parent = Container
     })
 end
 
 ----------------------------------------------------------------
--- PAGE CONTENT
+-- PAGES
 ----------------------------------------------------------------
 
 -- DASHBOARD
@@ -830,31 +714,21 @@ local P_Main = CreateTab("Dashboard")
 Library:Create("ImageLabel", {
     Size = UDim2.fromOffset(80, 80),
     Image = "rbxthumb://type=AvatarHeadShot&id=" .. player.UserId .. "&w=150&h=150",
-    BackgroundColor3 = Theme.DarkPanel,
-    Parent = P_Main
+    BackgroundColor3 = Theme.DarkPanel, Parent = P_Main
 }, {Library:MakeCorner(100)})
-
 Library:Create("TextLabel", {
     Text = "Welcome back, " .. player.DisplayName,
-    Font = Enum.Font.GothamBold, TextSize = 18,
-    TextColor3 = Theme.Accent,
-    Size = UDim2.new(1, 0, 0, 30),
-    BackgroundTransparency = 1,
-    Parent = P_Main
+    Font = Enum.Font.GothamBold, TextSize = 18, TextColor3 = Theme.Accent,
+    Size = UDim2.new(1, 0, 0, 30), BackgroundTransparency = 1, Parent = P_Main
 })
-
 local StatLabel = Library:Create("TextLabel", {
-    Text = "FPS: 60 | Ping: 0ms",
-    Font = Enum.Font.Code, TextSize = 14,
-    TextColor3 = Theme.TextDim,
-    Size = UDim2.new(1, 0, 0, 20),
-    BackgroundTransparency = 1,
-    Parent = P_Main
+    Text = "FPS: 60 | Ping: 0ms", Font = Enum.Font.Code, TextSize = 14,
+    TextColor3 = Theme.TextDim, Size = UDim2.new(1, 0, 0, 20),
+    BackgroundTransparency = 1, Parent = P_Main
 })
-
 task.spawn(function()
     while task.wait(1) do
-        local fps = math.floor(1/RunService.RenderStepped:Wait())
+        local fps  = math.floor(1 / RunService.RenderStepped:Wait())
         local ping = math.floor(player:GetNetworkPing() * 2000)
         StatLabel.Text = string.format("FPS: %d  //  Ping: %dms", fps, ping)
     end
@@ -862,17 +736,17 @@ end)
 
 -- LOCAL PLAYER
 local P_Player = CreateTab("LocalPlayer")
-local T_Noclip = Toggle(P_Player, "Noclip Mode", "Noclip", false, toggleNoclip)
-local T_Fly = Toggle(P_Player, "Flight Mode", "Fly", false, toggleFly)
-local T_Invis = Toggle(P_Player, "Ghost/Invisibility", "Invis", false, toggleInvis)
-local T_Teleport = Toggle(P_Player, "Click TP (Requires Key)", "Teleport", false, teleportToMouse)
+local T_Noclip  = Toggle(P_Player, "Noclip Mode",          "Noclip",    false, toggleNoclip)
+local T_Fly     = Toggle(P_Player, "Flight Mode",           "Fly",       false, toggleFly)
+local T_Invis   = Toggle(P_Player, "Ghost/Invisibility",    "Invis",     false, toggleInvis)
+local T_Teleport= Toggle(P_Player, "Click TP (Requires Key)","Teleport", false, teleportToMouse)
 T_Teleport.UpdateKey(state.keybinds.Teleport)
 
 Section(P_Player, "Movement Modifiers")
 local T_Speed = Toggle(P_Player, "Force WalkSpeed", "WalkSpeed", false, updateWalkSpeed)
 local S_Speed = Slider(P_Player, "Speed Value", 16, 300, 16, function(v) state.walkSpeed = v; updateWalkSpeed() end)
-local T_Jump = Toggle(P_Player, "Force JumpPower", "JumpPower", false, updateJumpPower)
-local S_Jump = Slider(P_Player, "Jump Value", 50, 400, 50, function(v) state.jumpPower = v; updateJumpPower() end)
+local T_Jump  = Toggle(P_Player, "Force JumpPower","JumpPower", false, updateJumpPower)
+local S_Jump  = Slider(P_Player, "Jump Value",  50, 400, 50, function(v) state.jumpPower = v; updateJumpPower() end)
 
 Button(P_Player, "Reset Physics Stats", Theme.Danger, function()
     state.walkSpeed = 16; state.jumpPower = 50
@@ -889,7 +763,7 @@ local KickBox = Input(P_Server, "Username to Kick (Client-side)")
 Button(P_Server, "Kick User", Theme.Danger, function()
     local target = KickBox.Text:lower()
     for _, p in pairs(Players:GetPlayers()) do
-        if p.Name:lower():sub(1, #target) == target or p.DisplayName:lower():sub(1, #target) == target then
+        if p.Name:lower():sub(1,#target) == target or p.DisplayName:lower():sub(1,#target) == target then
             p:Kick("Removed by OmniFlow Admin")
             Library:Notify("Success", "Kicked " .. p.Name, 3)
             return
@@ -905,22 +779,17 @@ Button(P_Server, "Add BTools (F3X)", nil, function()
     local d = Instance.new("HopperBin", player.Backpack); d.BinType = 2
     Library:Notify("Inventory", "Building tools added", 2)
 end)
-
 Button(P_Server, "Launch Dex Explorer", nil, function()
     loadstring(game:HttpGet("https://raw.githubusercontent.com/infyiff/backup/main/dex.lua"))()
     Library:Notify("System", "Dex Explorer Loaded", 3)
 end)
-
 Button(P_Server, "Launch SimpleSpy", nil, function()
     loadstring(game:HttpGet("https://github.com/exxtremestuffs/SimpleSpySource/raw/master/SimpleSpy.lua"))()
     Library:Notify("System", "SimpleSpy Loaded", 3)
 end)
-
 Button(P_Server, "Universal Ban Hammer", Theme.Danger, function()
-    local backpack = player:WaitForChild("Backpack")
     local tool = Instance.new("Tool")
-    tool.Name = "Ban Hammer"
-    tool.RequiresHandle = true
+    tool.Name = "Ban Hammer"; tool.RequiresHandle = true
     local handle = Instance.new("Part")
     handle.Name = "Handle"; handle.Size = Vector3.new(1,4,1); handle.Parent = tool
     tool.Activated:Connect(function()
@@ -930,19 +799,47 @@ Button(P_Server, "Universal Ban Hammer", Theme.Danger, function()
             if p then p:Kick("BANNED.") end
         end
     end)
-    tool.Parent = backpack
+    tool.Parent = player.Backpack
     Library:Notify("Inventory", "Ban Hammer Added", 2)
+end)
+
+-- VISUALS / ESP
+local P_Visuals = CreateTab("Visuals")
+Section(P_Visuals, "Entity Tracking")
+local T_ESP     = Toggle(P_Visuals, "ESP Master Switch",  "espEnabled",  false, toggleESP)
+local T_ESPBox  = Toggle(P_Visuals, "Show Highlight Box", "espBoxes",    true,  function(v) state.espBoxes    = v; refreshESPVisibility() end)
+local T_ESPName = Toggle(P_Visuals, "Show Names",         "espNames",    true,  function(v) state.espNames    = v; refreshESPVisibility() end)
+local T_ESPDist = Toggle(P_Visuals, "Show Distance",      "espDistance", true,  function(v) state.espDistance = v; refreshESPVisibility() end)
+local T_ESPHP   = Toggle(P_Visuals, "Show Health",        "espHealth",   true,  function(v) state.espHealth   = v; refreshESPVisibility() end)
+local T_ESPTeam = Toggle(P_Visuals, "Team Color Mode",    "espTeamColor",false, function(v)
+    state.espTeamColor = v
+    for p, container in pairs(espObjects) do
+        local col = getESPColor(p)
+        if container.highlight then container.highlight.OutlineColor = col; container.highlight.FillColor = col end
+        if container.nameLabel then container.nameLabel.TextColor3 = col end
+    end
+end)
+Section(P_Visuals, "Range")
+Slider(P_Visuals, "Max Distance (studs)", 50, 1000, 500, function(v) state.espMaxDist = v end)
+Button(P_Visuals, "Refresh ESP", Theme.Accent, function()
+    if state.espEnabled then
+        clearAllESP()
+        for _, p in pairs(Players:GetPlayers()) do buildESPForPlayer(p) end
+        refreshESPVisibility()
+        Library:Notify("ESP", "ESP refreshed", 2)
+    else
+        Library:Notify("ESP", "Enable ESP first", 2)
+    end
 end)
 
 -- CURRENCY
 local P_Cash = CreateTab("Currency")
 Section(P_Cash, "Scanner & Editor")
 local ScanBox = Input(P_Cash, "Current Value (e.g. 100)")
-local EditBox = Input(P_Cash, "Desired Value (e.g. 999999)")
-
+local EditBox  = Input(P_Cash, "Desired Value (e.g. 999999)")
 Button(P_Cash, "Scan & Modify", Theme.Accent, function()
     local target = tonumber(ScanBox.Text)
-    local new = tonumber(EditBox.Text)
+    local new    = tonumber(EditBox.Text)
     if not target or not new then Library:Notify("Error", "Invalid Numbers", 2) return end
     local count = 0
     local function s(loc)
@@ -955,9 +852,8 @@ Button(P_Cash, "Scan & Modify", Theme.Accent, function()
     s(player); s(ReplicatedStorage)
     Library:Notify("Result", "Changed " .. count .. " values", 3)
 end)
-
 Button(P_Cash, "Auto-Find 'Money' (+50)", Theme.Success, function()
-    local names = {"money", "cash", "credit", "coin", "point", "token", "gold"}
+    local names = {"money","cash","credit","coin","point","token","gold"}
     local c = 0
     for _, v in pairs(player:GetDescendants()) do
         if v:IsA("IntValue") or v:IsA("NumberValue") then
@@ -970,106 +866,264 @@ Button(P_Cash, "Auto-Find 'Money' (+50)", Theme.Success, function()
 end)
 
 ----------------------------------------------------------------
--- // VISUALS (ESP) TAB //
+-- // REMOTES TAB //
 ----------------------------------------------------------------
-local P_Visuals = CreateTab("Visuals")
+local P_Remotes = CreateTab("Remotes")
 
-Section(P_Visuals, "Entity Tracking")
+local remoteLog      = {}
+local liveConnections = {}
 
-local T_ESP = Toggle(P_Visuals, "ESP Master Switch", "espEnabled", false, function(v)
-    toggleESP(v)
-end)
+Section(P_Remotes, "Remote Scanner")
 
-local T_ESPBoxes = Toggle(P_Visuals, "Show Highlight Box", "espBoxes", true, function(v)
-    state.espBoxes = v
-    refreshESPVisibility()
-end)
+Library:Create("TextLabel", {
+    Text = "Scans ReplicatedStorage, Workspace & all services",
+    Font = Enum.Font.Gotham, TextSize = 12, TextColor3 = Theme.TextDim,
+    Size = UDim2.new(0.98, 0, 0, 30), BackgroundTransparency = 1,
+    TextWrapped = true, Parent = P_Remotes
+})
 
-local T_ESPNames = Toggle(P_Visuals, "Show Names", "espNames", true, function(v)
-    state.espNames = v
-    refreshESPVisibility()
-end)
+local remoteCounter = Library:Create("TextLabel", {
+    Text = "Found: 0 remotes", Font = Enum.Font.Code, TextSize = 12,
+    TextColor3 = Theme.Accent, Size = UDim2.new(0.98, 0, 0, 20),
+    BackgroundTransparency = 1, TextXAlignment = Enum.TextXAlignment.Left,
+    Parent = P_Remotes
+})
 
-local T_ESPDist = Toggle(P_Visuals, "Show Distance", "espDistance", true, function(v)
-    state.espDistance = v
-    refreshESPVisibility()
-end)
+-- Scrollable result list
+local remoteListOuter = Library:Create("Frame", {
+    Size = UDim2.new(0.98, 0, 0, 170),
+    BackgroundColor3 = Theme.DarkPanel, Parent = P_Remotes
+}, {Library:MakeCorner(6)})
+Library:AddSwirlingStroke(remoteListOuter, 1)
 
-local T_ESPHealth = Toggle(P_Visuals, "Show Health", "espHealth", true, function(v)
-    state.espHealth = v
-    refreshESPVisibility()
-end)
+local remoteListFrame = Library:Create("ScrollingFrame", {
+    Size = UDim2.new(1, -10, 1, -10),
+    Position = UDim2.fromOffset(5, 5),
+    BackgroundTransparency = 1,
+    ScrollBarThickness = 2,
+    ScrollBarImageColor3 = Theme.Accent,
+    CanvasSize = UDim2.new(0, 0, 0, 0),
+    AutomaticCanvasSize = Enum.AutomaticSize.Y,
+    Parent = remoteListOuter
+})
+Library:Create("UIListLayout", {Padding = UDim.new(0, 4), Parent = remoteListFrame})
 
-local T_ESPTeam = Toggle(P_Visuals, "Team Color Mode", "espTeamColor", false, function(v)
-    state.espTeamColor = v
-    -- Refresh colors on all active ESP objects
-    for p, container in pairs(espObjects) do
-        local col = getESPColor(p)
-        if container.highlight then
-            container.highlight.OutlineColor = col
-            container.highlight.FillColor = col
-        end
-        if container.nameLabel then
-            container.nameLabel.TextColor3 = col
+-- Filter
+local FilterBox = Input(P_Remotes, "Filter by name...")
+
+local function applyFilter()
+    local f = FilterBox.Text:lower()
+    for _, child in pairs(remoteListFrame:GetChildren()) do
+        if child:IsA("Frame") then
+            local lbl = child:FindFirstChildOfClass("TextLabel")
+            child.Visible = f == "" or (lbl and lbl.Text:lower():find(f, 1, true) ~= nil)
         end
     end
-end)
+end
+FilterBox:GetPropertyChangedSignal("Text"):Connect(applyFilter)
 
-Section(P_Visuals, "Range")
-Slider(P_Visuals, "Max Distance (studs)", 50, 1000, 500, function(v)
-    state.espMaxDist = v
-end)
+local function addRemoteRow(remote)
+    local isFunc   = remote:IsA("RemoteFunction")
+    local typeColor = isFunc and Color3.fromRGB(56, 189, 248) or Theme.Accent
 
-Button(P_Visuals, "Refresh ESP", Theme.Accent, function()
-    if state.espEnabled then
-        clearAllESP()
-        for _, p in pairs(Players:GetPlayers()) do
-            buildESPForPlayer(p)
+    local row = Library:Create("Frame", {
+        Size = UDim2.new(1, -4, 0, 36),
+        BackgroundColor3 = Color3.fromRGB(18, 18, 24),
+        Parent = remoteListFrame
+    }, {Library:MakeCorner(5)})
+
+    Library:Create("TextLabel", {
+        Text = isFunc and "FN" or "EV",
+        Font = Enum.Font.GothamBold, TextSize = 10, TextColor3 = typeColor,
+        BackgroundColor3 = Color3.fromRGB(10, 10, 14),
+        Size = UDim2.fromOffset(24, 18), Position = UDim2.fromOffset(6, 9),
+        TextXAlignment = Enum.TextXAlignment.Center, Parent = row
+    }, {Library:MakeCorner(4)})
+
+    local fullPath = remote:GetFullName()
+    Library:Create("TextLabel", {
+        Text = fullPath, Font = Enum.Font.Code, TextSize = 11, TextColor3 = Theme.Text,
+        BackgroundTransparency = 1, Size = UDim2.new(1, -100, 1, 0),
+        Position = UDim2.fromOffset(36, 0), TextXAlignment = Enum.TextXAlignment.Left,
+        TextTruncate = Enum.TextTruncate.AtEnd, Parent = row
+    })
+
+    local copyBtn = Library:Create("TextButton", {
+        Text = "Copy", Font = Enum.Font.GothamBold, TextSize = 11,
+        TextColor3 = Theme.Text, BackgroundColor3 = Theme.AccentDim,
+        Size = UDim2.fromOffset(44, 22),
+        Position = UDim2.new(1, -52, 0.5, -11), Parent = row
+    }, {Library:MakeCorner(4)})
+
+    copyBtn.MouseButton1Click:Connect(function()
+        pcall(setclipboard, fullPath)
+        copyBtn.Text = "✓"
+        Library:Notify("Remotes", "Path copied", 2)
+        task.delay(1.5, function() if copyBtn and copyBtn.Parent then copyBtn.Text = "Copy" end end)
+    end)
+end
+
+local function scanForRemotes()
+    for _, child in pairs(remoteListFrame:GetChildren()) do
+        if child:IsA("Frame") then child:Destroy() end
+    end
+    remoteLog = {}
+    local found = 0
+
+    local function walk(obj)
+        for _, child in pairs(obj:GetChildren()) do
+            if child:IsA("RemoteEvent") or child:IsA("RemoteFunction") then
+                table.insert(remoteLog, child)
+                addRemoteRow(child)
+                found += 1
+            end
+            pcall(walk, child)
         end
-        refreshESPVisibility()
-        Library:Notify("ESP", "ESP refreshed", 2)
+    end
+
+    local roots = {
+        game:GetService("ReplicatedStorage"),
+        game:GetService("Players"),
+        game:GetService("Workspace"),
+        game:GetService("ReplicatedFirst"),
+        game:GetService("StarterGui"),
+        game:GetService("StarterPack"),
+        game:GetService("StarterPlayer"),
+        game:GetService("Teams"),
+        game:GetService("Lighting"),
+    }
+    for _, root in pairs(roots) do pcall(walk, root) end
+
+    remoteCounter.Text = "Found: " .. found .. " remote" .. (found ~= 1 and "s" or "")
+    Library:Notify("Remotes", "Scan complete — " .. found .. " found", 3)
+    applyFilter()
+end
+
+-- LIVE MONITOR
+Section(P_Remotes, "Live Fire Monitor")
+
+local liveOuter = Library:Create("Frame", {
+    Size = UDim2.new(0.98, 0, 0, 110),
+    BackgroundColor3 = Theme.DarkPanel, Parent = P_Remotes
+}, {Library:MakeCorner(6)})
+Library:AddSwirlingStroke(liveOuter, 1)
+
+local liveScroll = Library:Create("ScrollingFrame", {
+    Size = UDim2.new(1, -10, 1, -10), Position = UDim2.fromOffset(5, 5),
+    BackgroundTransparency = 1, ScrollBarThickness = 2,
+    ScrollBarImageColor3 = Theme.Accent,
+    CanvasSize = UDim2.new(0, 0, 0, 0), AutomaticCanvasSize = Enum.AutomaticSize.Y,
+    Parent = liveOuter
+})
+Library:Create("UIListLayout", {
+    Padding = UDim.new(0, 3), SortOrder = Enum.SortOrder.LayoutOrder,
+    Parent = liveScroll
+})
+
+local liveOrder = 0
+local function addLiveEntry(remoteName, args)
+    liveOrder += 1
+    local parts = {}
+    pcall(function()
+        for _, v in pairs(args) do table.insert(parts, tostring(v)) end
+    end)
+    local argStr = #parts > 0 and table.concat(parts, ", ") or "no args"
+
+    local entry = Library:Create("TextLabel", {
+        Text = string.format("[FIRE] %s  →  (%s)", remoteName, argStr),
+        Font = Enum.Font.Code, TextSize = 10, TextColor3 = Theme.TextDim,
+        BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 16),
+        TextXAlignment = Enum.TextXAlignment.Left,
+        TextTruncate = Enum.TextTruncate.AtEnd,
+        LayoutOrder = liveOrder, Parent = liveScroll
+    })
+
+    task.wait()
+    liveScroll.CanvasPosition = Vector2.new(0, math.huge)
+
+    -- Cap at 60 entries
+    local kids = liveScroll:GetChildren()
+    if #kids > 62 then
+        for _, c in pairs(kids) do
+            if c:IsA("TextLabel") then c:Destroy(); break end
+        end
+    end
+end
+
+Toggle(P_Remotes, "Live Fire Monitor", "liveMonitor", false, function(v)
+    for _, conn in pairs(liveConnections) do pcall(function() conn:Disconnect() end) end
+    liveConnections = {}
+    if v then
+        local hooked = 0
+        for _, remote in pairs(remoteLog) do
+            if remote:IsA("RemoteEvent") then
+                local ok, conn = pcall(function()
+                    return remote.OnClientEvent:Connect(function(...)
+                        addLiveEntry(remote.Name, {...})
+                    end)
+                end)
+                if ok then table.insert(liveConnections, conn); hooked += 1 end
+            end
+        end
+        Library:Notify("Remotes", "Monitoring " .. hooked .. " events", 2)
     else
-        Library:Notify("ESP", "Enable ESP first", 2)
+        Library:Notify("Remotes", "Live monitor stopped", 2)
     end
+end)
+
+Button(P_Remotes, "Clear Live Log", nil, function()
+    for _, child in pairs(liveScroll:GetChildren()) do
+        if child:IsA("TextLabel") then child:Destroy() end
+    end
+    Library:Notify("Remotes", "Live log cleared", 1)
+end)
+
+Section(P_Remotes, "Actions")
+Button(P_Remotes, "Scan Now", Theme.Accent, scanForRemotes)
+Button(P_Remotes, "Copy All Paths", nil, function()
+    if #remoteLog == 0 then Library:Notify("Remotes", "Run a scan first", 2) return end
+    local lines = {}
+    for _, r in pairs(remoteLog) do table.insert(lines, r:GetFullName()) end
+    pcall(setclipboard, table.concat(lines, "\n"))
+    Library:Notify("Remotes", "Copied " .. #remoteLog .. " paths", 2)
+end)
+Button(P_Remotes, "Clear Results", Theme.Danger, function()
+    for _, child in pairs(remoteListFrame:GetChildren()) do
+        if child:IsA("Frame") then child:Destroy() end
+    end
+    remoteLog = {}
+    remoteCounter.Text = "Found: 0 remotes"
+    Library:Notify("Remotes", "Results cleared", 1)
 end)
 
 -- CREDITS
 local P_Creds = CreateTab("Credits")
 Library:Create("TextLabel", {
-    Text = "Engineered by Smoothie",
-    Font = Enum.Font.GothamBold, TextSize = 24,
-    TextColor3 = Theme.Accent,
-    Size = UDim2.new(1,0,0,50),
-    BackgroundTransparency = 1,
-    Parent = P_Creds
+    Text = "Engineered by Smoothie", Font = Enum.Font.GothamBold, TextSize = 24,
+    TextColor3 = Theme.Accent, Size = UDim2.new(1,0,0,50),
+    BackgroundTransparency = 1, Parent = P_Creds
 })
 Library:Create("TextLabel", {
-    Text = "UI Redesign by OmniFlow",
-    Font = Enum.Font.Code, TextSize = 14,
-    TextColor3 = Theme.TextDim,
-    Size = UDim2.new(1,0,0,30),
-    BackgroundTransparency = 1,
-    Parent = P_Creds
+    Text = "UI Redesign by OmniFlow", Font = Enum.Font.Code, TextSize = 14,
+    TextColor3 = Theme.TextDim, Size = UDim2.new(1,0,0,30),
+    BackgroundTransparency = 1, Parent = P_Creds
 })
 Library:Create("TextLabel", {
-    Text = "ESP System: Void Nebula Edition",
-    Font = Enum.Font.Code, TextSize = 13,
-    TextColor3 = Theme.TextDim,
-    Size = UDim2.new(1,0,0,30),
-    BackgroundTransparency = 1,
-    Parent = P_Creds
+    Text = "ESP + Remote Scanner: Void Nebula Edition", Font = Enum.Font.Code, TextSize = 13,
+    TextColor3 = Theme.TextDim, Size = UDim2.new(1,0,0,30),
+    BackgroundTransparency = 1, Parent = P_Creds
 })
 
 ----------------------------------------------------------------
--- GLOBAL INPUTS
+-- GLOBAL KEYBINDS
 ----------------------------------------------------------------
 local TogglesMap = {
-    Noclip = {UpdateKey = T_Noclip.UpdateKey, Func = toggleNoclip, Ref = T_Noclip.Update},
-    Fly = {UpdateKey = T_Fly.UpdateKey, Func = toggleFly, Ref = T_Fly.Update},
-    Invis = {UpdateKey = T_Invis.UpdateKey, Func = toggleInvis, Ref = T_Invis.Update},
-    WalkSpeed = {UpdateKey = T_Speed.UpdateKey, Func = updateWalkSpeed, Ref = T_Speed.Update},
-    JumpPower = {UpdateKey = T_Jump.UpdateKey, Func = updateJumpPower, Ref = T_Jump.Update},
-    Teleport = {UpdateKey = T_Teleport.UpdateKey, Action = teleportToMouse}
+    Noclip    = {UpdateKey = T_Noclip.UpdateKey,   Func = toggleNoclip,   Ref = T_Noclip.Update},
+    Fly       = {UpdateKey = T_Fly.UpdateKey,       Func = toggleFly,      Ref = T_Fly.Update},
+    Invis     = {UpdateKey = T_Invis.UpdateKey,     Func = toggleInvis,    Ref = T_Invis.Update},
+    WalkSpeed = {UpdateKey = T_Speed.UpdateKey,     Func = updateWalkSpeed,Ref = T_Speed.Update},
+    JumpPower = {UpdateKey = T_Jump.UpdateKey,      Func = updateJumpPower,Ref = T_Jump.Update},
+    Teleport  = {UpdateKey = T_Teleport.UpdateKey,  Action = teleportToMouse}
 }
 
 UIS.InputBegan:Connect(function(input, gp)
@@ -1096,9 +1150,9 @@ UIS.InputBegan:Connect(function(input, gp)
             if map.Action then
                 map.Action()
             elseif map.Func and map.Ref then
-                local key = name:lower() == "invis" and "invis"
-                    or name:lower() == "walkspeed" and "wsEnabled"
-                    or name:lower() == "jumppower" and "jpEnabled"
+                local key = name:lower() == "invis"      and "invis"
+                    or name:lower() == "walkspeed"        and "wsEnabled"
+                    or name:lower() == "jumppower"        and "jpEnabled"
                     or name:lower()
                 state[key] = not state[key]
                 map.Ref(state[key])
@@ -1108,4 +1162,4 @@ UIS.InputBegan:Connect(function(input, gp)
     end
 end)
 
-Library:Notify("OmniFlow", "Smoothies Hub V2 + ESP Loaded", 3)
+Library:Notify("OmniFlow", "Smoothies Hub V2 Loaded — All Systems Online", 3)
