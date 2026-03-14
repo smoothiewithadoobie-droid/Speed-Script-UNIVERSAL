@@ -37,22 +37,23 @@ local Theme = {
 -- LOGIC STATE
 ----------------------------------------------------------------
 local state = {
-    minimized = false,
-    noclip = false,
-    fly = false,
-    invis = false,
-    flySpeed = 60,
-    walkSpeed = 16,
-    jumpPower = 50,
-    wsEnabled = false,
-    jpEnabled = false,
-    espEnabled = false,
-    espBoxes = true,
-    espNames = true,
-    espDistance = true,
-    espHealth = true,
-    espTeamColor = false,
-    espMaxDist = 500,
+    minimized     = false,
+    noclip        = false,
+    fly           = false,
+    invis         = false,
+    flySpeed      = 60,
+    walkSpeed     = 16,
+    jumpPower     = 50,
+    wsEnabled     = false,
+    jpEnabled     = false,
+    espEnabled    = false,
+    espBoxes      = true,
+    espNames      = true,
+    espDistance   = true,
+    espHealth     = true,
+    espTeamColor  = false,
+    espMaxDist    = 500,
+    liveMonitor   = false,
     keybinds = {
         Noclip    = Enum.KeyCode.X,
         Fly       = Enum.KeyCode.G,
@@ -64,9 +65,9 @@ local state = {
     listening = nil
 }
 
-local connections = {}
-local flyObjects = {}
-local invisStorage = {}
+local connections     = {}
+local flyObjects      = {}
+local invisStorage    = {}
 
 ----------------------------------------------------------------
 -- UTILITIES & UI LIBRARY
@@ -173,29 +174,28 @@ local function toggleFly(v)
     if v then
         Library:Notify("System", "Fly Enabled", 2)
         local bv = Instance.new("BodyVelocity")
-        bv.Velocity = Vector3.new(0,0,0)
-        bv.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
-        bv.Parent = hrp
+        bv.Velocity  = Vector3.new(0,0,0)
+        bv.MaxForce  = Vector3.new(math.huge, math.huge, math.huge)
+        bv.Parent    = hrp
         local bg = Instance.new("BodyGyro")
-        bg.CFrame = hrp.CFrame
+        bg.CFrame    = hrp.CFrame
         bg.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
-        bg.Parent = hrp
-        flyObjects = {bv, bg}
+        bg.Parent    = hrp
+        flyObjects   = {bv, bg}
         task.spawn(function()
             while state.fly do
                 local md = Vector3.new(0,0,0)
-                if UIS:IsKeyDown(Enum.KeyCode.W) then md += camera.CFrame.LookVector end
-                if UIS:IsKeyDown(Enum.KeyCode.S) then md -= camera.CFrame.LookVector end
-                if UIS:IsKeyDown(Enum.KeyCode.A) then md -= camera.CFrame.RightVector end
-                if UIS:IsKeyDown(Enum.KeyCode.D) then md += camera.CFrame.RightVector end
-                if UIS:IsKeyDown(Enum.KeyCode.Space) then md += Vector3.new(0,1,0) end
-                if UIS:IsKeyDown(Enum.KeyCode.LeftShift) then md -= Vector3.new(0,1,0) end
+                if UIS:IsKeyDown(Enum.KeyCode.W)          then md += camera.CFrame.LookVector  end
+                if UIS:IsKeyDown(Enum.KeyCode.S)          then md -= camera.CFrame.LookVector  end
+                if UIS:IsKeyDown(Enum.KeyCode.A)          then md -= camera.CFrame.RightVector end
+                if UIS:IsKeyDown(Enum.KeyCode.D)          then md += camera.CFrame.RightVector end
+                if UIS:IsKeyDown(Enum.KeyCode.Space)      then md += Vector3.new(0,1,0)        end
+                if UIS:IsKeyDown(Enum.KeyCode.LeftShift)  then md -= Vector3.new(0,1,0)        end
                 bv.Velocity = md * state.flySpeed
-                bg.CFrame = camera.CFrame
+                bg.CFrame   = camera.CFrame
                 task.wait()
             end
-            bv:Destroy()
-            bg:Destroy()
+            bv:Destroy(); bg:Destroy()
         end)
     else
         Library:Notify("System", "Fly Disabled", 2)
@@ -212,13 +212,13 @@ end
 
 local function toggleInvis(v)
     state.invis = v
-    local char = getChar()
+    local char  = getChar()
     if v then
         Library:Notify("Cloak", "Invisibility Active", 2)
         for _, part in pairs(char:GetDescendants()) do
             if part:IsA("BasePart") or part:IsA("Decal") then
                 invisStorage[part] = part.Transparency
-                part.Transparency = 1
+                part.Transparency  = 1
             end
         end
     else
@@ -239,7 +239,7 @@ local function updateJumpPower()
     local hum = getHum()
     if hum then
         hum.UseJumpPower = true
-        hum.JumpPower = state.jpEnabled and state.jumpPower or 50
+        hum.JumpPower    = state.jpEnabled and state.jumpPower or 50
     end
 end
 
@@ -247,7 +247,7 @@ end
 -- ESP MODULE
 ----------------------------------------------------------------
 local ESPFolder = Instance.new("Folder")
-ESPFolder.Name = "SmoothiesESP"
+ESPFolder.Name   = "SmoothiesESP"
 ESPFolder.Parent = CoreGui
 
 local espObjects = {}
@@ -267,71 +267,71 @@ local function buildESPForPlayer(p)
     if p == player then return end
     if espObjects[p] then return end
     local container = {}
-    espObjects[p] = container
+    espObjects[p]   = container
 
     local highlight = Instance.new("Highlight")
-    highlight.Name = "ESP_Highlight_" .. p.Name
-    highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-    highlight.FillTransparency = 0.75
+    highlight.Name               = "ESP_Highlight_" .. p.Name
+    highlight.DepthMode          = Enum.HighlightDepthMode.AlwaysOnTop
+    highlight.FillTransparency   = 0.75
     highlight.OutlineTransparency = 0
-    highlight.OutlineColor = getESPColor(p)
-    highlight.FillColor = getESPColor(p)
-    highlight.Parent = ESPFolder
-    container.highlight = highlight
+    highlight.OutlineColor       = getESPColor(p)
+    highlight.FillColor          = getESPColor(p)
+    highlight.Parent             = ESPFolder
+    container.highlight          = highlight
 
     local bbGui = Instance.new("BillboardGui")
-    bbGui.Name = "ESP_Billboard_" .. p.Name
-    bbGui.Size = UDim2.fromOffset(120, 50)
-    bbGui.StudsOffset = Vector3.new(0, 3.5, 0)
-    bbGui.AlwaysOnTop = true
+    bbGui.Name         = "ESP_Billboard_" .. p.Name
+    bbGui.Size         = UDim2.fromOffset(120, 50)
+    bbGui.StudsOffset  = Vector3.new(0, 3.5, 0)
+    bbGui.AlwaysOnTop  = true
     bbGui.ResetOnSpawn = false
-    bbGui.Parent = ESPFolder
-    container.bbGui = bbGui
+    bbGui.Parent       = ESPFolder
+    container.bbGui    = bbGui
 
     local nameLabel = Instance.new("TextLabel")
-    nameLabel.Size = UDim2.new(1, 0, 0, 20)
+    nameLabel.Size                 = UDim2.new(1, 0, 0, 20)
     nameLabel.BackgroundTransparency = 1
-    nameLabel.Text = p.DisplayName
-    nameLabel.TextColor3 = getESPColor(p)
-    nameLabel.Font = Enum.Font.GothamBold
-    nameLabel.TextSize = 13
+    nameLabel.Text                 = p.DisplayName
+    nameLabel.TextColor3           = getESPColor(p)
+    nameLabel.Font                 = Enum.Font.GothamBold
+    nameLabel.TextSize             = 13
     nameLabel.TextStrokeTransparency = 0.5
-    nameLabel.TextStrokeColor3 = Color3.new(0,0,0)
-    nameLabel.Parent = bbGui
-    container.nameLabel = nameLabel
+    nameLabel.TextStrokeColor3     = Color3.new(0,0,0)
+    nameLabel.Parent               = bbGui
+    container.nameLabel            = nameLabel
 
     local distLabel = Instance.new("TextLabel")
-    distLabel.Size = UDim2.new(1, 0, 0, 16)
-    distLabel.Position = UDim2.new(0, 0, 0, 20)
+    distLabel.Size                 = UDim2.new(1, 0, 0, 16)
+    distLabel.Position             = UDim2.new(0, 0, 0, 20)
     distLabel.BackgroundTransparency = 1
-    distLabel.Text = "0 studs"
-    distLabel.TextColor3 = Theme.TextDim
-    distLabel.Font = Enum.Font.Code
-    distLabel.TextSize = 11
+    distLabel.Text                 = "0 studs"
+    distLabel.TextColor3           = Theme.TextDim
+    distLabel.Font                 = Enum.Font.Code
+    distLabel.TextSize             = 11
     distLabel.TextStrokeTransparency = 0.5
-    distLabel.TextStrokeColor3 = Color3.new(0,0,0)
-    distLabel.Parent = bbGui
-    container.distLabel = distLabel
+    distLabel.TextStrokeColor3     = Color3.new(0,0,0)
+    distLabel.Parent               = bbGui
+    container.distLabel            = distLabel
 
     local hpLabel = Instance.new("TextLabel")
-    hpLabel.Size = UDim2.new(1, 0, 0, 14)
-    hpLabel.Position = UDim2.new(0, 0, 0, 36)
+    hpLabel.Size                   = UDim2.new(1, 0, 0, 14)
+    hpLabel.Position               = UDim2.new(0, 0, 0, 36)
     hpLabel.BackgroundTransparency = 1
-    hpLabel.Text = "HP: 100"
-    hpLabel.TextColor3 = Theme.Success
-    hpLabel.Font = Enum.Font.Code
-    hpLabel.TextSize = 11
+    hpLabel.Text                   = "HP: 100"
+    hpLabel.TextColor3             = Theme.Success
+    hpLabel.Font                   = Enum.Font.Code
+    hpLabel.TextSize               = 11
     hpLabel.TextStrokeTransparency = 0.5
-    hpLabel.TextStrokeColor3 = Color3.new(0,0,0)
-    hpLabel.Parent = bbGui
-    container.hpLabel = hpLabel
+    hpLabel.TextStrokeColor3       = Color3.new(0,0,0)
+    hpLabel.Parent                 = bbGui
+    container.hpLabel              = hpLabel
 
     local function attachToChar(char)
         if not char then return end
         local hrp = char:FindFirstChild("HumanoidRootPart")
         if hrp then
             highlight.Adornee = char
-            bbGui.Adornee = hrp
+            bbGui.Adornee     = hrp
         end
     end
 
@@ -339,9 +339,9 @@ local function buildESPForPlayer(p)
     p.CharacterAdded:Connect(function(char)
         task.wait(0.5)
         attachToChar(char)
-        highlight.OutlineColor = getESPColor(p)
-        highlight.FillColor = getESPColor(p)
-        nameLabel.TextColor3 = getESPColor(p)
+        highlight.OutlineColor  = getESPColor(p)
+        highlight.FillColor     = getESPColor(p)
+        nameLabel.TextColor3    = getESPColor(p)
     end)
 end
 
@@ -349,7 +349,7 @@ local function removeESPForPlayer(p)
     local container = espObjects[p]
     if not container then return end
     if container.highlight then container.highlight:Destroy() end
-    if container.bbGui then container.bbGui:Destroy() end
+    if container.bbGui     then container.bbGui:Destroy()     end
     espObjects[p] = nil
 end
 
@@ -359,10 +359,10 @@ end
 
 local function refreshESPVisibility()
     for _, container in pairs(espObjects) do
-        if container.highlight  then container.highlight.Enabled       = state.espBoxes    end
-        if container.nameLabel  then container.nameLabel.Visible        = state.espNames    end
-        if container.distLabel  then container.distLabel.Visible        = state.espDistance end
-        if container.hpLabel    then container.hpLabel.Visible          = state.espHealth   end
+        if container.highlight then container.highlight.Enabled  = state.espBoxes    end
+        if container.nameLabel then container.nameLabel.Visible   = state.espNames    end
+        if container.distLabel then container.distLabel.Visible   = state.espDistance end
+        if container.hpLabel   then container.hpLabel.Visible     = state.espHealth   end
     end
 end
 
@@ -376,20 +376,19 @@ RunService.RenderStepped:Connect(function()
         local hrp = char:FindFirstChild("HumanoidRootPart")
         local hum = char:FindFirstChildOfClass("Humanoid")
         if hrp and myHRP then
-            local dist = math.floor((hrp.Position - myHRP.Position).Magnitude)
+            local dist    = math.floor((hrp.Position - myHRP.Position).Magnitude)
             local inRange = dist <= state.espMaxDist
             if container.highlight then container.highlight.Enabled = inRange and state.espBoxes end
-            if container.bbGui     then container.bbGui.Enabled     = inRange end
+            if container.bbGui     then container.bbGui.Enabled     = inRange                    end
             if inRange and container.distLabel and state.espDistance then
                 container.distLabel.Text = dist .. " studs"
             end
         end
         if hum and container.hpLabel and state.espHealth then
             local ratio = hum.Health / math.max(hum.MaxHealth, 1)
-            container.hpLabel.Text = "HP: " .. math.floor(hum.Health) .. "/" .. math.floor(hum.MaxHealth)
+            container.hpLabel.Text       = "HP: " .. math.floor(hum.Health) .. "/" .. math.floor(hum.MaxHealth)
             container.hpLabel.TextColor3 = ratio > 0.6 and Theme.Success
-                or ratio > 0.3 and Color3.fromRGB(250, 204, 21)
-                or Theme.Danger
+                or ratio > 0.3 and Color3.fromRGB(250, 204, 21) or Theme.Danger
         end
     end
 end)
@@ -415,36 +414,36 @@ Players.PlayerRemoving:Connect(function(p) removeESPForPlayer(p) end)
 -- MAIN UI
 ----------------------------------------------------------------
 local ScreenGui = Library:Create("ScreenGui", {
-    Name = "SmoothiesHub_Redux",
-    ResetOnSpawn = false,
-    Parent = CoreGui
+    Name          = "SmoothiesHub_Redux",
+    ResetOnSpawn  = false,
+    Parent        = CoreGui
 })
 
 NotifyContainer = Library:Create("Frame", {
-    Size = UDim2.fromOffset(250, 400),
-    Position = UDim2.new(1, -270, 1, -420),
+    Size                = UDim2.fromOffset(250, 400),
+    Position            = UDim2.new(1, -270, 1, -420),
     BackgroundTransparency = 1,
-    Parent = ScreenGui
+    Parent              = ScreenGui
 })
 local notifyLayout = Instance.new("UIListLayout")
-notifyLayout.Padding = UDim.new(0, 10)
+notifyLayout.Padding           = UDim.new(0, 10)
 notifyLayout.VerticalAlignment = Enum.VerticalAlignment.Bottom
-notifyLayout.Parent = NotifyContainer
+notifyLayout.Parent            = NotifyContainer
 
 local MainFrame = Library:Create("Frame", {
-    Size = UDim2.fromOffset(650, 420),
-    Position = UDim2.fromScale(0.5, 0.5),
+    Size        = UDim2.fromOffset(650, 420),
+    Position    = UDim2.fromScale(0.5, 0.5),
     AnchorPoint = Vector2.new(0.5, 0.5),
     BackgroundColor3 = Theme.Background,
-    Parent = ScreenGui
+    Parent      = ScreenGui
 }, {Library:MakeCorner(12)})
 Library:AddSwirlingStroke(MainFrame, 2.5)
 
 local Header = Library:Create("Frame", {
-    Size = UDim2.new(1, 0, 0, 50),
-    BackgroundColor3 = Theme.Sidebar,
+    Size                = UDim2.new(1, 0, 0, 50),
+    BackgroundColor3    = Theme.Sidebar,
     BackgroundTransparency = 0.5,
-    Parent = MainFrame
+    Parent              = MainFrame
 }, {Library:MakeCorner(12)})
 Library:Create("Frame", {
     Size = UDim2.new(1, 0, 0, 10), Position = UDim2.new(0,0,1,-10),
@@ -504,7 +503,7 @@ local Sidebar = Library:Create("Frame", {
     Size = UDim2.new(0, 150, 1, -50),
     Position = UDim2.new(0, 0, 0, 50),
     BackgroundColor3 = Theme.Sidebar,
-    BorderSizePixel = 0,
+    BorderSizePixel  = 0,
     Parent = MainFrame
 })
 
@@ -525,20 +524,18 @@ local function CreateTab(name)
         ScrollBarThickness = 2,
         ScrollBarImageColor3 = Theme.Accent,
         Visible = false,
-        Parent = ContentArea
+        Parent  = ContentArea
     })
     Library:Create("UIListLayout", {
         Padding = UDim.new(0, 10),
         HorizontalAlignment = Enum.HorizontalAlignment.Center,
         Parent = PageFrame
     })
-
     local TabBtn = Library:Create("TextButton", {
         Text = name, Font = Enum.Font.GothamMedium, TextSize = 14,
         TextColor3 = Theme.TextDim, BackgroundColor3 = Theme.DarkPanel,
         Size = UDim2.new(1, 0, 0, 35), Parent = SidebarLayout
     }, {Library:MakeCorner(6)})
-
     TabBtn.MouseButton1Click:Connect(function()
         for _, p in pairs(ContentArea:GetChildren()) do
             if p:IsA("ScrollingFrame") then p.Visible = false end
@@ -551,12 +548,11 @@ local function CreateTab(name)
         end
         Library:Tween(TabBtn, {TextColor3 = Theme.Text, BackgroundColor3 = Theme.Accent})
     end)
-
     if not CurrentTab then
-        CurrentTab = PageFrame
+        CurrentTab        = PageFrame
         PageFrame.Visible = true
         TabBtn.BackgroundColor3 = Theme.Accent
-        TabBtn.TextColor3 = Theme.Text
+        TabBtn.TextColor3       = Theme.Text
     end
     return PageFrame
 end
@@ -576,27 +572,23 @@ local function Toggle(parent, text, featureName, default, callback)
         Size = UDim2.new(0.98, 0, 0, 45),
         BackgroundColor3 = Theme.DarkPanel, Parent = parent
     }, {Library:MakeCorner(6)})
-
     Library:Create("TextLabel", {
         Text = text, Font = Enum.Font.GothamSemibold, TextSize = 14,
         TextColor3 = Theme.Text, Size = UDim2.new(0.6, 0, 1, 0),
         Position = UDim2.fromOffset(15, 0), BackgroundTransparency = 1,
         TextXAlignment = Enum.TextXAlignment.Left, Parent = Holder
     })
-
     local Btn = Library:Create("TextButton", {
         Text = "", Size = UDim2.fromOffset(40, 20),
         Position = UDim2.new(1, -55, 0.5, -10),
         BackgroundColor3 = default and Theme.Accent or Color3.fromRGB(40,40,45),
         Parent = Holder
     }, {Library:MakeCorner(20)})
-
     local Circle = Library:Create("Frame", {
         Size = UDim2.fromOffset(16, 16),
         Position = default and UDim2.new(1,-18,0.5,-8) or UDim2.new(0,2,0.5,-8),
         BackgroundColor3 = Theme.Text, Parent = Btn
     }, {Library:MakeCorner(100)})
-
     local KeyBtn
     if state.keybinds[featureName] then
         KeyBtn = Library:Create("TextButton", {
@@ -606,7 +598,6 @@ local function Toggle(parent, text, featureName, default, callback)
             Position = UDim2.new(1, -90, 0.5, -10), Parent = Holder
         })
     end
-
     Btn.MouseButton1Click:Connect(function()
         local key = featureName:lower() == "invis"      and "invis"
             or featureName:lower() == "walkspeed"        and "wsEnabled"
@@ -618,14 +609,12 @@ local function Toggle(parent, text, featureName, default, callback)
         Library:Tween(Circle, {Position = active and UDim2.new(1,-18,0.5,-8) or UDim2.new(0,2,0.5,-8)})
         callback(active)
     end)
-
     if KeyBtn then
         KeyBtn.MouseButton1Click:Connect(function()
             KeyBtn.Text = "[...]"; KeyBtn.TextColor3 = Theme.Accent
             state.listening = featureName
         end)
     end
-
     return {
         Update = function(val)
             Library:Tween(Btn, {BackgroundColor3 = val and Theme.Accent or Color3.fromRGB(40,40,45)})
@@ -735,11 +724,11 @@ task.spawn(function()
 end)
 
 -- LOCAL PLAYER
-local P_Player = CreateTab("LocalPlayer")
-local T_Noclip  = Toggle(P_Player, "Noclip Mode",          "Noclip",    false, toggleNoclip)
-local T_Fly     = Toggle(P_Player, "Flight Mode",           "Fly",       false, toggleFly)
-local T_Invis   = Toggle(P_Player, "Ghost/Invisibility",    "Invis",     false, toggleInvis)
-local T_Teleport= Toggle(P_Player, "Click TP (Requires Key)","Teleport", false, teleportToMouse)
+local P_Player  = CreateTab("LocalPlayer")
+local T_Noclip  = Toggle(P_Player, "Noclip Mode",           "Noclip",    false, toggleNoclip)
+local T_Fly     = Toggle(P_Player, "Flight Mode",            "Fly",       false, toggleFly)
+local T_Invis   = Toggle(P_Player, "Ghost/Invisibility",     "Invis",     false, toggleInvis)
+local T_Teleport= Toggle(P_Player, "Click TP (Requires Key)","Teleport",  false, teleportToMouse)
 T_Teleport.UpdateKey(state.keybinds.Teleport)
 
 Section(P_Player, "Movement Modifiers")
@@ -759,7 +748,7 @@ end)
 
 -- SERVER TOOLS
 local P_Server = CreateTab("Server Tools")
-local KickBox = Input(P_Server, "Username to Kick (Client-side)")
+local KickBox  = Input(P_Server, "Username to Kick (Client-side)")
 Button(P_Server, "Kick User", Theme.Danger, function()
     local target = KickBox.Text:lower()
     for _, p in pairs(Players:GetPlayers()) do
@@ -806,12 +795,12 @@ end)
 -- VISUALS / ESP
 local P_Visuals = CreateTab("Visuals")
 Section(P_Visuals, "Entity Tracking")
-local T_ESP     = Toggle(P_Visuals, "ESP Master Switch",  "espEnabled",  false, toggleESP)
-local T_ESPBox  = Toggle(P_Visuals, "Show Highlight Box", "espBoxes",    true,  function(v) state.espBoxes    = v; refreshESPVisibility() end)
-local T_ESPName = Toggle(P_Visuals, "Show Names",         "espNames",    true,  function(v) state.espNames    = v; refreshESPVisibility() end)
-local T_ESPDist = Toggle(P_Visuals, "Show Distance",      "espDistance", true,  function(v) state.espDistance = v; refreshESPVisibility() end)
-local T_ESPHP   = Toggle(P_Visuals, "Show Health",        "espHealth",   true,  function(v) state.espHealth   = v; refreshESPVisibility() end)
-local T_ESPTeam = Toggle(P_Visuals, "Team Color Mode",    "espTeamColor",false, function(v)
+Toggle(P_Visuals, "ESP Master Switch",  "espEnabled",  false, toggleESP)
+Toggle(P_Visuals, "Show Highlight Box", "espBoxes",    true,  function(v) state.espBoxes    = v; refreshESPVisibility() end)
+Toggle(P_Visuals, "Show Names",         "espNames",    true,  function(v) state.espNames    = v; refreshESPVisibility() end)
+Toggle(P_Visuals, "Show Distance",      "espDistance", true,  function(v) state.espDistance = v; refreshESPVisibility() end)
+Toggle(P_Visuals, "Show Health",        "espHealth",   true,  function(v) state.espHealth   = v; refreshESPVisibility() end)
+Toggle(P_Visuals, "Team Color Mode",    "espTeamColor",false, function(v)
     state.espTeamColor = v
     for p, container in pairs(espObjects) do
         local col = getESPColor(p)
@@ -866,12 +855,13 @@ Button(P_Cash, "Auto-Find 'Money' (+50)", Theme.Success, function()
 end)
 
 ----------------------------------------------------------------
--- // REMOTES TAB //
+-- REMOTES TAB
 ----------------------------------------------------------------
 local P_Remotes = CreateTab("Remotes")
 
-local remoteLog      = {}
+local remoteLog       = {}
 local liveConnections = {}
+local selectedRemote  = nil
 
 Section(P_Remotes, "Remote Scanner")
 
@@ -889,26 +879,22 @@ local remoteCounter = Library:Create("TextLabel", {
     Parent = P_Remotes
 })
 
--- Scrollable result list
+-- Result list
 local remoteListOuter = Library:Create("Frame", {
-    Size = UDim2.new(0.98, 0, 0, 170),
+    Size = UDim2.new(0.98, 0, 0, 160),
     BackgroundColor3 = Theme.DarkPanel, Parent = P_Remotes
 }, {Library:MakeCorner(6)})
 Library:AddSwirlingStroke(remoteListOuter, 1)
 
 local remoteListFrame = Library:Create("ScrollingFrame", {
-    Size = UDim2.new(1, -10, 1, -10),
-    Position = UDim2.fromOffset(5, 5),
-    BackgroundTransparency = 1,
-    ScrollBarThickness = 2,
+    Size = UDim2.new(1, -10, 1, -10), Position = UDim2.fromOffset(5, 5),
+    BackgroundTransparency = 1, ScrollBarThickness = 2,
     ScrollBarImageColor3 = Theme.Accent,
-    CanvasSize = UDim2.new(0, 0, 0, 0),
-    AutomaticCanvasSize = Enum.AutomaticSize.Y,
+    CanvasSize = UDim2.new(0, 0, 0, 0), AutomaticCanvasSize = Enum.AutomaticSize.Y,
     Parent = remoteListOuter
 })
 Library:Create("UIListLayout", {Padding = UDim.new(0, 4), Parent = remoteListFrame})
 
--- Filter
 local FilterBox = Input(P_Remotes, "Filter by name...")
 
 local function applyFilter()
@@ -922,8 +908,21 @@ local function applyFilter()
 end
 FilterBox:GetPropertyChangedSignal("Text"):Connect(applyFilter)
 
+-- Selected remote display (declared before addRemoteRow so it's in scope)
+local selectedLabel = Library:Create("TextLabel", {
+    Text = "No remote selected — click a row to select",
+    Font = Enum.Font.Code, TextSize = 11, TextColor3 = Theme.TextDim,
+    BackgroundColor3 = Theme.DarkPanel,
+    Size = UDim2.new(0.98, 0, 0, 30),
+    TextXAlignment = Enum.TextXAlignment.Left,
+    TextTruncate = Enum.TextTruncate.AtEnd,
+    Parent = P_Remotes
+})
+Library:Create("UIPadding", {PaddingLeft = UDim.new(0, 8), Parent = selectedLabel})
+Library:MakeCorner(6, selectedLabel)
+
 local function addRemoteRow(remote)
-    local isFunc   = remote:IsA("RemoteFunction")
+    local isFunc    = remote:IsA("RemoteFunction")
     local typeColor = isFunc and Color3.fromRGB(56, 189, 248) or Theme.Accent
 
     local row = Library:Create("Frame", {
@@ -961,15 +960,36 @@ local function addRemoteRow(remote)
         Library:Notify("Remotes", "Path copied", 2)
         task.delay(1.5, function() if copyBtn and copyBtn.Parent then copyBtn.Text = "Copy" end end)
     end)
+
+    -- Click row body to select for firing
+    local selectBtn = Library:Create("TextButton", {
+        Text = "", BackgroundTransparency = 1,
+        Size = UDim2.new(1, -56, 1, 0),
+        Parent = row
+    })
+    selectBtn.MouseButton1Click:Connect(function()
+        selectedRemote = remote
+        selectedLabel.Text       = "► " .. fullPath
+        selectedLabel.TextColor3 = typeColor
+        Library:Tween(row, {BackgroundColor3 = Color3.fromRGB(40, 20, 60)}, 0.15)
+        task.delay(0.15, function()
+            if row and row.Parent then
+                Library:Tween(row, {BackgroundColor3 = Color3.fromRGB(18, 18, 24)}, 0.3)
+            end
+        end)
+    end)
 end
 
 local function scanForRemotes()
     for _, child in pairs(remoteListFrame:GetChildren()) do
         if child:IsA("Frame") then child:Destroy() end
     end
-    remoteLog = {}
-    local found = 0
+    remoteLog      = {}
+    selectedRemote = nil
+    selectedLabel.Text       = "No remote selected — click a row to select"
+    selectedLabel.TextColor3 = Theme.TextDim
 
+    local found = 0
     local function walk(obj)
         for _, child in pairs(obj:GetChildren()) do
             if child:IsA("RemoteEvent") or child:IsA("RemoteFunction") then
@@ -980,7 +1000,6 @@ local function scanForRemotes()
             pcall(walk, child)
         end
     end
-
     local roots = {
         game:GetService("ReplicatedStorage"),
         game:GetService("Players"),
@@ -993,7 +1012,6 @@ local function scanForRemotes()
         game:GetService("Lighting"),
     }
     for _, root in pairs(roots) do pcall(walk, root) end
-
     remoteCounter.Text = "Found: " .. found .. " remote" .. (found ~= 1 and "s" or "")
     Library:Notify("Remotes", "Scan complete — " .. found .. " found", 3)
     applyFilter()
@@ -1003,7 +1021,7 @@ end
 Section(P_Remotes, "Live Fire Monitor")
 
 local liveOuter = Library:Create("Frame", {
-    Size = UDim2.new(0.98, 0, 0, 110),
+    Size = UDim2.new(0.98, 0, 0, 100),
     BackgroundColor3 = Theme.DarkPanel, Parent = P_Remotes
 }, {Library:MakeCorner(6)})
 Library:AddSwirlingStroke(liveOuter, 1)
@@ -1027,26 +1045,19 @@ local function addLiveEntry(remoteName, args)
     pcall(function()
         for _, v in pairs(args) do table.insert(parts, tostring(v)) end
     end)
-    local argStr = #parts > 0 and table.concat(parts, ", ") or "no args"
-
-    local entry = Library:Create("TextLabel", {
-        Text = string.format("[FIRE] %s  →  (%s)", remoteName, argStr),
+    Library:Create("TextLabel", {
+        Text = string.format("[FIRE] %s  →  (%s)", remoteName, #parts > 0 and table.concat(parts, ", ") or "no args"),
         Font = Enum.Font.Code, TextSize = 10, TextColor3 = Theme.TextDim,
         BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 16),
         TextXAlignment = Enum.TextXAlignment.Left,
         TextTruncate = Enum.TextTruncate.AtEnd,
         LayoutOrder = liveOrder, Parent = liveScroll
     })
-
     task.wait()
     liveScroll.CanvasPosition = Vector2.new(0, math.huge)
-
-    -- Cap at 60 entries
     local kids = liveScroll:GetChildren()
     if #kids > 62 then
-        for _, c in pairs(kids) do
-            if c:IsA("TextLabel") then c:Destroy(); break end
-        end
+        for _, c in pairs(kids) do if c:IsA("TextLabel") then c:Destroy(); break end end
     end
 end
 
@@ -1078,6 +1089,64 @@ Button(P_Remotes, "Clear Live Log", nil, function()
     Library:Notify("Remotes", "Live log cleared", 1)
 end)
 
+-- FIRE REMOTE
+Section(P_Remotes, "Fire Remote")
+
+local ArgsBox = Input(P_Remotes, 'Args: comma separated — true, 42, "hello"')
+
+local function parseArg(s)
+    s = s:match("^%s*(.-)%s*$")
+    if s == "true"  then return true  end
+    if s == "false" then return false end
+    if s == "nil"   then return nil   end
+    local n = tonumber(s)
+    if n then return n end
+    return s:match('^"(.*)"$') or s:match("^'(.*)'$") or s
+end
+
+local function parseArgs(raw)
+    local args = {}
+    for segment in (raw .. ","):gmatch("([^,]*),") do
+        local trimmed = segment:match("^%s*(.-)%s*$")
+        if trimmed ~= "" then table.insert(args, parseArg(trimmed)) end
+    end
+    return args
+end
+
+Button(P_Remotes, "Fire Selected Remote", Theme.Accent, function()
+    if not selectedRemote or not selectedRemote.Parent then
+        Library:Notify("Remotes", "No remote selected", 2)
+        return
+    end
+    local args = parseArgs(ArgsBox.Text)
+    local ok, err = pcall(function()
+        if selectedRemote:IsA("RemoteEvent") then
+            selectedRemote:FireServer(table.unpack(args))
+        elseif selectedRemote:IsA("RemoteFunction") then
+            local result = selectedRemote:InvokeServer(table.unpack(args))
+            Library:Notify("Remotes", "Result: " .. tostring(result), 4)
+        end
+    end)
+    if ok then
+        Library:Notify("Remotes", "Fired: " .. selectedRemote.Name, 2)
+    else
+        Library:Notify("Error", tostring(err):sub(1, 60), 4)
+    end
+end)
+
+Button(P_Remotes, "Fire All Events (No Args)", Theme.Danger, function()
+    if #remoteLog == 0 then Library:Notify("Remotes", "Run a scan first", 2) return end
+    local fired, failed = 0, 0
+    for _, remote in pairs(remoteLog) do
+        local ok = pcall(function()
+            if remote:IsA("RemoteEvent") then remote:FireServer() end
+        end)
+        if ok then fired += 1 else failed += 1 end
+    end
+    Library:Notify("Remotes", string.format("Fired %d  |  Failed %d", fired, failed), 3)
+end)
+
+-- ACTIONS
 Section(P_Remotes, "Actions")
 Button(P_Remotes, "Scan Now", Theme.Accent, scanForRemotes)
 Button(P_Remotes, "Copy All Paths", nil, function()
@@ -1091,8 +1160,11 @@ Button(P_Remotes, "Clear Results", Theme.Danger, function()
     for _, child in pairs(remoteListFrame:GetChildren()) do
         if child:IsA("Frame") then child:Destroy() end
     end
-    remoteLog = {}
-    remoteCounter.Text = "Found: 0 remotes"
+    remoteLog      = {}
+    selectedRemote = nil
+    remoteCounter.Text       = "Found: 0 remotes"
+    selectedLabel.Text       = "No remote selected — click a row to select"
+    selectedLabel.TextColor3 = Theme.TextDim
     Library:Notify("Remotes", "Results cleared", 1)
 end)
 
@@ -1118,11 +1190,11 @@ Library:Create("TextLabel", {
 -- GLOBAL KEYBINDS
 ----------------------------------------------------------------
 local TogglesMap = {
-    Noclip    = {UpdateKey = T_Noclip.UpdateKey,   Func = toggleNoclip,   Ref = T_Noclip.Update},
-    Fly       = {UpdateKey = T_Fly.UpdateKey,       Func = toggleFly,      Ref = T_Fly.Update},
-    Invis     = {UpdateKey = T_Invis.UpdateKey,     Func = toggleInvis,    Ref = T_Invis.Update},
-    WalkSpeed = {UpdateKey = T_Speed.UpdateKey,     Func = updateWalkSpeed,Ref = T_Speed.Update},
-    JumpPower = {UpdateKey = T_Jump.UpdateKey,      Func = updateJumpPower,Ref = T_Jump.Update},
+    Noclip    = {UpdateKey = T_Noclip.UpdateKey,   Func = toggleNoclip,    Ref = T_Noclip.Update},
+    Fly       = {UpdateKey = T_Fly.UpdateKey,       Func = toggleFly,       Ref = T_Fly.Update},
+    Invis     = {UpdateKey = T_Invis.UpdateKey,     Func = toggleInvis,     Ref = T_Invis.Update},
+    WalkSpeed = {UpdateKey = T_Speed.UpdateKey,     Func = updateWalkSpeed, Ref = T_Speed.Update},
+    JumpPower = {UpdateKey = T_Jump.UpdateKey,      Func = updateJumpPower, Ref = T_Jump.Update},
     Teleport  = {UpdateKey = T_Teleport.UpdateKey,  Action = teleportToMouse}
 }
 
@@ -1137,22 +1209,19 @@ UIS.InputBegan:Connect(function(input, gp)
         end
         return
     end
-
     if input.KeyCode == Enum.KeyCode.RightControl then
         ScreenGui.Enabled = not ScreenGui.Enabled
     end
-
     if gp then return end
-
     for name, code in pairs(state.keybinds) do
         if input.KeyCode == code and TogglesMap[name] then
             local map = TogglesMap[name]
             if map.Action then
                 map.Action()
             elseif map.Func and map.Ref then
-                local key = name:lower() == "invis"      and "invis"
-                    or name:lower() == "walkspeed"        and "wsEnabled"
-                    or name:lower() == "jumppower"        and "jpEnabled"
+                local key = name:lower() == "invis"     and "invis"
+                    or name:lower() == "walkspeed"       and "wsEnabled"
+                    or name:lower() == "jumppower"       and "jpEnabled"
                     or name:lower()
                 state[key] = not state[key]
                 map.Ref(state[key])
@@ -1162,4 +1231,4 @@ UIS.InputBegan:Connect(function(input, gp)
     end
 end)
 
-Library:Notify("OmniFlow", "Smoothies Hub V2 Loaded — All Systems Online", 3)
+Library:Notify("OmniFlow", "Smoothies Hub V2 — All Systems Online", 3)
