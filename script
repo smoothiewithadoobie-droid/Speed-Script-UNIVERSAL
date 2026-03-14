@@ -918,10 +918,11 @@ local function Toggle(parent, text, featureName, default, callback)
     local KeyBtn
     if state.keybinds[featureName] then
         local _kb = state.keybinds[featureName]
+        local _kbValid = _kb and _kb ~= Enum.KeyCode.Unknown
         KeyBtn = Library:Create("TextButton", {
-            Text = _kb and "["..(_kb.Name).."]" or "[None]",
+            Text = _kbValid and "["..(_kb.Name).."]" or "[None]",
             Font = Enum.Font.Code, TextSize = 11,
-            TextColor3 = _kb and Theme.TextDim or Theme.Danger,
+            TextColor3 = _kbValid and Theme.TextDim or Theme.Danger,
             BackgroundTransparency = 1, Size = UDim2.fromOffset(40,20),
             Position = UDim2.new(1,-95,0.5,-10), Parent = H
         })
@@ -950,7 +951,7 @@ local function Toggle(parent, text, featureName, default, callback)
         end,
         UpdateKey = function(k)
             if KeyBtn then
-                if k then
+                if k and k ~= Enum.KeyCode.Unknown then
                     KeyBtn.Text = "["..k.Name.."]"
                     KeyBtn.TextColor3 = Theme.TextDim
                 else
@@ -6854,7 +6855,7 @@ local TogglesMap = {
     WalkSpeed = {UpdateKey = T_Speed.UpdateKey,     Func = updateWalkSpeed, Ref = T_Speed.Update},
     JumpPower = {UpdateKey = T_Jump.UpdateKey,      Func = updateJumpPower, Ref = T_Jump.Update},
     Teleport  = {UpdateKey = T_Teleport.UpdateKey,  Action = teleportToMouse},
-    Aimbot    = {UpdateKey = function(k) aimbotKeyBtn.Text = k and "["..k.Name.."]" or "[None]"; aimbotKeyBtn.TextColor3 = k and Theme.TextDim or Theme.Danger end, Func = toggleAimbot},
+    Aimbot    = {UpdateKey = function(k) local v = k and k ~= Enum.KeyCode.Unknown; aimbotKeyBtn.Text = v and "["..k.Name.."]" or "[None]"; aimbotKeyBtn.TextColor3 = v and Theme.TextDim or Theme.Danger end, Func = toggleAimbot},
     FlingOnTouch = {UpdateKey = T_Fling.UpdateKey, Func = toggleFlingOnTouch, Ref = T_Fling.Update}
 }
 
@@ -6862,10 +6863,10 @@ UIS.InputBegan:Connect(function(input, gp)
     if state.listening then
         if input.UserInputType == Enum.UserInputType.Keyboard then
             if input.KeyCode == Enum.KeyCode.Escape then
-                -- ESC = clear this keybind (set to None)
-                state.keybinds[state.listening] = nil
+                -- ESC = clear this keybind (Unknown can never be pressed, so it will never fire)
+                state.keybinds[state.listening] = Enum.KeyCode.Unknown
                 if TogglesMap[state.listening] then
-                    TogglesMap[state.listening].UpdateKey(nil)
+                    TogglesMap[state.listening].UpdateKey(Enum.KeyCode.Unknown)
                 end
             else
                 state.keybinds[state.listening] = input.KeyCode
@@ -6882,8 +6883,8 @@ UIS.InputBegan:Connect(function(input, gp)
     end
     if gp then return end
     for name, code in pairs(state.keybinds) do
-        -- Skip keybinds that have been cleared to nil
-        if code and input.KeyCode == code and TogglesMap[name] then
+        -- Skip keybinds that have been cleared to Unknown (can never be pressed)
+        if code ~= Enum.KeyCode.Unknown and input.KeyCode == code and TogglesMap[name] then
             local map = TogglesMap[name]
             if map.Action then
                 map.Action()
@@ -6902,3 +6903,4 @@ UIS.InputBegan:Connect(function(input, gp)
         end
     end
 end)
+
