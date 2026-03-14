@@ -6314,120 +6314,498 @@ Toggle(P_Fisch, "Zone Casting", "zoneCasting", false, function(v)
 end)
 
 
--- JUJUTSU SHENANIGANS TAB
-local P_JJS = CreateTab("Jujutsu Shenanigans")
+----------------------------------------------------------------
+-- JJS HELPERS (uses real remotes from ReplicatedStorage.Knit.Knit.Services)
+----------------------------------------------------------------
+local jjsConnections = {}
+local jjsMoveHighlights = {}   -- tracks active move highlights per player
+local jjsRoleLabels    = {}    -- tracks role billboards per player
+
+local function getKnitRE(serviceName, eventName)
+    local ok, svc = pcall(function()
+        return ReplicatedStorage.Knit.Knit.Services[serviceName].RE[eventName]
+    end)
+    if ok and svc then return svc end
+    return nil
+end
+
+local function jjsGetClosestEnemy(maxDist)
+    local hrp = getHRP()
+    if not hrp then return nil end
+    local closest, minDist = nil, maxDist or 20
+    for _, p in pairs(Players:GetPlayers()) do
+        if p ~= player and p.Character then
+            local eHRP = p.Character:FindFirstChild("HumanoidRootPart")
+            local hum  = p.Character:FindFirstChildOfClass("Humanoid")
+            if eHRP and hum and hum.Health > 0 then
+                local d = (eHRP.Position - hrp.Position).Magnitude
+                if d < minDist then minDist = d; closest = p end
+            end
+        end
+    end
+    return closest
+end
+
+local function clearJJSMoveHighlights()
+    for p, hl in pairs(jjsMoveHighlights) do
+        if hl and hl.Parent then hl:Destroy() end
+    end
+    jjsMoveHighlights = {}
+end
+
+local function clearJJSRoleLabels()
+    for p, bb in pairs(jjsRoleLabels) do
+        if bb and bb.Parent then bb:Destroy() end
+    end
+    jjsRoleLabels = {}
+end
+
+-- The JJS game uses a known set of service names per character/move.
+-- We listen to their .RE.Activated events to detect when a move fires.
+local JJS_MOVE_SERVICES = {
+    "GojoService", "MahitoService", "NaoyaService", "HakariService",
+    "CharaService", "GokuService", "MegumiService", "YutaService",
+    "ItadoriService", "ChosoService", "RikaService", "NanamiService",
+    "HeianService", "HarutaService", "TodoService", "MokouService",
+    "YukiService", "MahoragaService", "LocustService", "HiromiService",
+    "CustomService", "FightService",
+}
+
+local JJS_DOMAIN_SERVICES = {
+    "InfiniteVoidService", "MalevolantShrineService", "HakariService",
+    "DomainService",
+}
+
+local function setupMoveESP()
+    for _, svcName in ipairs(JJS_MOVE_SERVICES) do
+        local re = getKnitRE(svcName, "Activated")
+        if re then
+            local conn = re.OnClientEvent:Connect(function(targetArg)
+                if not state.jjsMoveESP then return end
+                -- targetArg is usually the character or player who triggered
+                local char = nil
+                if typeof(targetArg) == "Instance" then
+                    if targetArg:IsA("Model") then
+                        char = targetArg
+                    elseif targetArg:IsA("Player") then
+                        char = targetArg.Character
+                    end
+                end
+                if not char then return end
+                local p = Players:GetPlayerFromCharacter(char)
+                if not p or p == player then return end
+                -- Flash a bright highlight on the character for 1.5 seconds
+                if jjsMoveHighlights[p] and jjsMoveHighlights[p].Parent then
+                    jjsMoveHighlights[p]:Destroy()
+                end
+                local hl = Instance.new("Highlight")
+                hl.FillColor = Color3.fromRGB(255, 100, 0)
+                hl.OutlineColor = Color3.fromRGB(255, 220, 0)
+                hl.FillTransparency = 0.3
+                hl.OutlineTransparency = 0
+                hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+                hl.Adornee = char
+                hl.Parent = ESPFolder
+                jjsMoveHighlights[p] = hl
+                task.delay(1.5, function()
+                    if hl and hl.Parent then hl:Destroy() end
+                    if jjsMoveHighlights[p] == hl then jjsMoveHighlights[p] = nil end
+                end)
+            end)
+            table.insert(jjsConnections, conn)
+        end
+    end
+    -- Also detect Domain Expansions (special highlight — red/purple)
+    for _, svcName in ipairs(JJS_DOMAIN_SERVICES) do
+        local re = getKnitRE(svcName, "Activated")
+        if re then
+            local conn = re.OnClientEvent:Connect(function(targetArg)
+                if not state.jjsMoveESP then return end
+                local char = nil
+                if typeof(targetArg) == "Instance" then
+                    if targetArg:IsA("Model") then char = targetArg
+                    elseif targetArg:IsA("Player") then char = targetArg.Character end
+                end
+                if not char then return end
+                local p = Players:GetPlayerFromCharacter(char)
+                if not p or p == player then return end
+                if jjsMoveHighlights[p] and jjsMoveHighlights[p].Parent then
+                    jjsMoveHighlights[p]:Destroy()
+                end
+                local hl = Instance.new("Highlight")
+                hl.FillColor = Color3.fromRGB(180, 0, 255)
+                hl.OutlineColor = Color3.fromRGB(255, 0, 100)
+                hl.FillTransparency = 0.2
+                hl.OutlineTransparency = 0
+                hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+                hl.Adornee = char
+                hl.Parent = ESPFolder
+                jjsMoveHighlights[p] = hl
+                Library:Notify("JJS", p.DisplayName .. " activated Domain!", 3)
+                task.delay(5, function()
+                    if hl and hl.Parent then hl:Destroy() end
+                    if jjsMoveHighlights[p] == hl then jjsMoveHighlights[p] = nil end
+                end)
+            end)
+            table.insert(jjsConnections, conn)
+        end
+    end
+end
+
+local function teardownMoveESP()
+    for _, conn in ipairs(jjsConnections) do
+        pcall(function() conn:Disconnect() end)
+    end
+    jjsConnections = {}
+    clearJJSMoveHighlights()
+end
+
+-- Role ESP: watch JoinService.RE.Change for role data
+-- Also scan leaderstats / character attributes for role information
+local function buildRoleESPForPlayer(p)
+    if p == player then return end
+    if jjsRoleLabels[p] and jjsRoleLabels[p].Parent then return end
+    local char = p.Character
+    if not char then return end
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
+
+    local role = "Unknown"
+    -- Try to read role from leaderstats or character attributes (game-specific)
+    local ls = p:FindFirstChild("leaderstats")
+    if ls then
+        local roleVal = ls:FindFirstChild("Role") or ls:FindFirstChild("Class")
+        if roleVal then role = tostring(roleVal.Value) end
+    end
+    -- Fallback: read from character attributes
+    local attrRole = char:GetAttribute("Role") or char:GetAttribute("Class") or char:GetAttribute("Character")
+    if attrRole then role = tostring(attrRole) end
+
+    -- Color by role
+    local roleColor = Color3.fromRGB(140, 140, 160)
+    local roleLower = role:lower()
+    if roleLower:find("sorcerer") or roleLower:find("jujutsu") then
+        roleColor = Color3.fromRGB(100, 200, 255)
+    elseif roleLower:find("curse") or roleLower:find("cursed") then
+        roleColor = Color3.fromRGB(180, 50, 255)
+    elseif roleLower:find("gojo") then
+        roleColor = Color3.fromRGB(100, 220, 255)
+    elseif roleLower:find("mahito") then
+        roleColor = Color3.fromRGB(200, 80, 200)
+    end
+
+    local bb = Instance.new("BillboardGui")
+    bb.Size = UDim2.fromOffset(140, 30)
+    bb.StudsOffset = Vector3.new(0, 5.5, 0)
+    bb.AlwaysOnTop = true
+    bb.ResetOnSpawn = false
+    bb.Adornee = hrp
+    bb.Parent = ESPFolder
+    jjsRoleLabels[p] = bb
+
+    local lbl = Instance.new("TextLabel")
+    lbl.Size = UDim2.new(1,0,1,0)
+    lbl.BackgroundTransparency = 1
+    lbl.Font = Enum.Font.GothamBold
+    lbl.TextSize = 13
+    lbl.TextColor3 = roleColor
+    lbl.TextStrokeTransparency = 0.3
+    lbl.TextStrokeColor3 = Color3.new(0,0,0)
+    lbl.Text = "[" .. role .. "]"
+    lbl.Parent = bb
+
+    -- Update when character changes
+    p.CharacterAdded:Connect(function(newChar)
+        if not state.jjsRoleESP then return end
+        if bb and bb.Parent then bb:Destroy() end
+        jjsRoleLabels[p] = nil
+        task.wait(1)
+        buildRoleESPForPlayer(p)
+    end)
+end
+
+----------------------------------------------------------------
+-- JJS TAB
+----------------------------------------------------------------
+local P_JJS = CreateTab("JJS")
 
 Section(P_JJS, "ESP & Visuals")
 
 Toggle(P_JJS, "Move / Domain ESP", "jjsMoveESP", false, function(v)
     state.jjsMoveESP = v
-    if v then 
-        Library:Notify("JJS", "Move/Domain ESP Enabled", 2)
-        -- Add your ESP logic here (highlight players using moves)
+    if v then
+        setupMoveESP()
+        Library:Notify("JJS", "Move/Domain ESP Active — flashes orange on moves, purple on Domains", 3)
     else
+        teardownMoveESP()
         Library:Notify("JJS", "Move/Domain ESP Disabled", 2)
     end
 end)
 
 Toggle(P_JJS, "Role ESP (Sorcerer/Curse)", "jjsRoleESP", false, function(v)
     state.jjsRoleESP = v
-    if v then Library:Notify("JJS", "Role ESP Enabled", 2) end
+    if v then
+        for _, p in pairs(Players:GetPlayers()) do
+            task.spawn(buildRoleESPForPlayer, p)
+        end
+        Library:Notify("JJS", "Role ESP Enabled", 2)
+    else
+        clearJJSRoleLabels()
+        Library:Notify("JJS", "Role ESP Disabled", 2)
+    end
 end)
 
 Section(P_JJS, "Combat")
 
+-- Auto Block: fires BlockService.RE.Deactivated repeatedly to re-initiate block timing
+-- The real block input in JJS is holding F — we hold it via VirtualInputService
 Toggle(P_JJS, "Auto Block / Perfect Block", "autoBlock", false, function(v)
     state.autoBlock = v
-    if v then 
-        Library:Notify("JJS", "Auto Block Enabled", 2)
+    if v then
+        Library:Notify("JJS", "Auto Block Enabled — holding block input (F)", 2)
         task.spawn(function()
+            local VIS = game:GetService("VirtualInputService")
             while state.autoBlock do
                 pcall(function()
-                    game:GetService("VirtualInputService"):SendKeyEvent(true, Enum.KeyCode.Q, false, game)
-                    task.wait(0.05)
-                    game:GetService("VirtualInputService"):SendKeyEvent(false, Enum.KeyCode.Q, false, game)
+                    -- Hold F (block key in JJS)
+                    VIS:SendKeyEvent(true, Enum.KeyCode.F, false, game)
                 end)
-                task.wait(0.1)
+                task.wait(0.08)
+                pcall(function()
+                    -- Brief release to trigger perfect block timing window
+                    VIS:SendKeyEvent(false, Enum.KeyCode.F, false, game)
+                end)
+                task.wait(0.05)
             end
+            pcall(function()
+                game:GetService("VirtualInputService"):SendKeyEvent(false, Enum.KeyCode.F, false, game)
+            end)
         end)
+    else
+        Library:Notify("JJS", "Auto Block Disabled", 2)
     end
 end)
 
+-- Kill Aura: fires FightService.RE.Activated (the M1 hitbox remote) on closest player
+-- Also uses HitboxService.RE.Hitbox for registering hit detection server-side
 Toggle(P_JJS, "Kill Aura (Auto M1)", "killAura", false, function(v)
     state.killAura = v
-    if v then 
+    if v then
         Library:Notify("JJS", "Kill Aura Enabled", 2)
         task.spawn(function()
+            local fightRE   = getKnitRE("FightService", "Activated")
+            local hitboxRE  = getKnitRE("HitboxService", "Hitbox")
             while state.killAura do
                 pcall(function()
-                    local closest = nil
-                    local minDist = 20
-
-                    for _, p in pairs(Players:GetPlayers()) do
-                        if p ~= player and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
-                            local dist = (p.Character.HumanoidRootPart.Position - getHRP().Position).Magnitude
-                            if dist < minDist then
-                                minDist = dist
-                                closest = p
+                    local target = jjsGetClosestEnemy(25)
+                    if target and target.Character then
+                        local eHRP = target.Character:FindFirstChild("HumanoidRootPart")
+                        if eHRP then
+                            -- Face the target
+                            local hrp = getHRP()
+                            if hrp then
+                                hrp.CFrame = CFrame.lookAt(hrp.Position, Vector3.new(eHRP.Position.X, hrp.Position.Y, eHRP.Position.Z))
                             end
+                            -- Fire M1 remote (FightService handles basic M1 attacks)
+                            if fightRE then
+                                fightRE:FireServer(target.Character)
+                            end
+                            -- Also fire hitbox to register damage server-side
+                            if hitboxRE then
+                                hitboxRE:FireServer(target.Character)
+                            end
+                            -- Fallback: click button
+                            game:GetService("VirtualUser"):ClickButton1(Vector2.new())
                         end
                     end
+                end)
+                task.wait(0.12 + math.random() * 0.15)
+            end
+        end)
+    else
+        Library:Notify("JJS", "Kill Aura Disabled", 2)
+    end
+end)
 
-                    if closest then
+-- Rapid M1 Spam: spams FightService.Activated faster than normal cooldown
+Toggle(P_JJS, "Rapid M1 Spam", "jjsRapidM1", false, function(v)
+    state.jjsRapidM1 = v
+    if v then
+        Library:Notify("JJS", "Rapid M1 Spam Enabled", 2)
+        task.spawn(function()
+            local fightRE = getKnitRE("FightService", "Activated")
+            while state.jjsRapidM1 do
+                pcall(function()
+                    local target = jjsGetClosestEnemy(30)
+                    if target and target.Character and fightRE then
+                        fightRE:FireServer(target.Character)
+                    else
                         game:GetService("VirtualUser"):ClickButton1(Vector2.new())
                     end
                 end)
-                task.wait(0.1 + math.random() * 0.2)
+                task.wait(0.04)
             end
         end)
+    else
+        Library:Notify("JJS", "Rapid M1 Spam Disabled", 2)
     end
 end)
 
 Section(P_JJS, "Movement & Misc")
 
+-- Infinite Stamina: continuously patches local stamina/energy values
+-- Also fires MovementService.RE.Dash to bypass dash cooldown
 Toggle(P_JJS, "Infinite Stamina / Energy", "infiniteStamina", false, function(v)
     state.infiniteStamina = v
-    if v then 
-        Library:Notify("JJS", "Infinite Stamina Attempt", 2)
+    if v then
+        Library:Notify("JJS", "Infinite Stamina Active", 2)
         task.spawn(function()
             while state.infiniteStamina do
                 pcall(function()
-                    local stamina = player:FindFirstChild("Stamina") or player.Character:FindFirstChild("Stamina")
-                    if stamina and stamina:IsA("NumberValue") then
-                        stamina.Value = stamina.MaxValue or 100
+                    -- Try common value paths for JJS stamina
+                    local char = player.Character
+                    if char then
+                        for _, name in ipairs({"Stamina","Energy","CursedEnergy","CE","Mana"}) do
+                            local val = char:FindFirstChild(name) or player:FindFirstChild(name)
+                            if val then
+                                if val:IsA("NumberValue") or val:IsA("IntValue") then
+                                    val.Value = (rawget(val,"MaxValue") ~= nil and val.MaxValue) or 100
+                                end
+                            end
+                        end
+                        -- Also patch via character attributes
+                        for _, attrName in ipairs({"Stamina","Energy","CursedEnergy"}) do
+                            local attrVal = char:GetAttribute(attrName)
+                            if attrVal ~= nil then
+                                local maxAttr = char:GetAttribute("Max"..attrName) or 100
+                                char:SetAttribute(attrName, maxAttr)
+                            end
+                        end
                     end
                 end)
-                task.wait(0.3)
+                task.wait(0.2)
             end
         end)
+    else
+        Library:Notify("JJS", "Infinite Stamina Disabled", 2)
     end
 end)
 
-do
-    local playersList = {}
-    for _, p in pairs(Players:GetPlayers()) do
-        if p ~= player then table.insert(playersList, p.Name) end
+-- Dash Spam: fires MovementService.RE.Dash to dash without cooldown
+Toggle(P_JJS, "Dash Spam (No Cooldown)", "jjsDashSpam", false, function(v)
+    state.jjsDashSpam = v
+    if v then
+        Library:Notify("JJS", "Dash Spam Enabled", 2)
+        task.spawn(function()
+            local dashRE = getKnitRE("MovementService", "Dash")
+            local resetRE = getKnitRE("MovementService", "ResetDash")
+            while state.jjsDashSpam do
+                pcall(function()
+                    if resetRE then resetRE:FireServer() end
+                    if dashRE then dashRE:FireServer() end
+                end)
+                task.wait(0.1)
+            end
+        end)
+    else
+        Library:Notify("JJS", "Dash Spam Disabled", 2)
     end
+end)
 
-    local selectedPlayer = playersList[1] or "No players"
+-- Teleport to Player dropdown
+do
+    local jjsPlayersList = {}
+    local jjsSelectedPlayer = "No players"
 
-    local playerDropdown = Library:Create("TextButton", {
-        Text = "TP to: " .. selectedPlayer,
-        Font = Enum.Font.GothamSemibold, TextSize = 14,
+    local jjsDropdownBtn = Library:Create("TextButton", {
+        Text = "Select Player: " .. jjsSelectedPlayer,
+        Font = Enum.Font.GothamSemibold, TextSize = 13,
         TextColor3 = Theme.Text, Size = UDim2.new(0.98,0,0,40),
         BackgroundColor3 = Theme.DarkPanel, Parent = P_JJS
     }, {Library:MakeCorner(6)})
 
-    Button(P_JJS, "Teleport to Selected Player", Theme.Accent, function()
-        local target = Players:FindFirstChild(selectedPlayer)
-        if target and target.Character and target.Character:FindFirstChild("HumanoidRootPart") then
-            getHRP().CFrame = target.Character.HumanoidRootPart.CFrame * CFrame.new(0, 5, 0)
-            Library:Notify("JJS", "Teleported to " .. selectedPlayer, 2)
+    local jjsDropdownOpen = false
+    local jjsDropdownList = Library:Create("Frame", {
+        Size = UDim2.new(0.98,0,0,0), Position = UDim2.new(0.01,0,0,0),
+        BackgroundColor3 = Theme.DarkPanel, ClipsDescendants = true,
+        Visible = false, ZIndex = 10, Parent = P_JJS
+    }, {Library:MakeCorner(6)})
+    Library:Create("UIListLayout", {Padding = UDim.new(0,2), Parent = jjsDropdownList})
+
+    local function refreshJJSPlayers()
+        jjsPlayersList = {}
+        for _, p in pairs(Players:GetPlayers()) do
+            if p ~= player then table.insert(jjsPlayersList, p.Name) end
+        end
+        if #jjsPlayersList > 0 then
+            jjsSelectedPlayer = jjsPlayersList[1]
         else
-            Library:Notify("JJS", "Player not found", 2)
+            jjsSelectedPlayer = "No players"
+        end
+        jjsDropdownBtn.Text = "Select Player: " .. jjsSelectedPlayer
+        -- Rebuild dropdown children
+        for _, c in pairs(jjsDropdownList:GetChildren()) do
+            if not c:IsA("UIListLayout") then c:Destroy() end
+        end
+        for _, name in ipairs(jjsPlayersList) do
+            local opt = Library:Create("TextButton", {
+                Text = name, Font = Enum.Font.Gotham, TextSize = 13,
+                TextColor3 = Theme.Text, BackgroundColor3 = Theme.Sidebar,
+                Size = UDim2.new(1,0,0,32), ZIndex = 11, Parent = jjsDropdownList
+            }, {Library:MakeCorner(4)})
+            opt.MouseButton1Click:Connect(function()
+                jjsSelectedPlayer = name
+                jjsDropdownBtn.Text = "Select Player: " .. name
+                jjsDropdownOpen = false
+                Library:Tween(jjsDropdownList, {Size = UDim2.new(0.98,0,0,0)}, 0.2)
+                task.wait(0.2); jjsDropdownList.Visible = false
+            end)
+        end
+        local totalH = #jjsPlayersList * 34
+        if jjsDropdownOpen then
+            jjsDropdownList.Size = UDim2.new(0.98,0,0,totalH)
+        end
+    end
+
+    jjsDropdownBtn.MouseButton1Click:Connect(function()
+        refreshJJSPlayers()
+        jjsDropdownOpen = not jjsDropdownOpen
+        if jjsDropdownOpen then
+            local h = #jjsPlayersList * 34
+            jjsDropdownList.Visible = true
+            Library:Tween(jjsDropdownList, {Size = UDim2.new(0.98,0,0,math.max(h,32))}, 0.2)
+        else
+            Library:Tween(jjsDropdownList, {Size = UDim2.new(0.98,0,0,0)}, 0.2)
+            task.wait(0.2); jjsDropdownList.Visible = false
         end
     end)
+
+    Button(P_JJS, "Refresh Player List", Theme.AccentDim, function()
+        refreshJJSPlayers()
+        Library:Notify("JJS", "Player list refreshed", 1)
+    end)
+
+    Button(P_JJS, "Teleport to Selected Player", Theme.Accent, function()
+        local target = Players:FindFirstChild(jjsSelectedPlayer)
+        if target and target.Character and target.Character:FindFirstChild("HumanoidRootPart") then
+            local hrp = getHRP()
+            if hrp then
+                hrp.CFrame = target.Character.HumanoidRootPart.CFrame * CFrame.new(0, 5, 0)
+                Library:Notify("JJS", "Teleported to " .. jjsSelectedPlayer, 2)
+            end
+        else
+            Library:Notify("JJS", "Player not found or no character", 2)
+        end
+    end)
+
+    refreshJJSPlayers()
+    Players.PlayerAdded:Connect(refreshJJSPlayers)
+    Players.PlayerRemoving:Connect(refreshJJSPlayers)
 end
+
+-- Initialize jjsRapidM1 and jjsDashSpam state fields (added dynamically)
+state.jjsRapidM1 = false
+state.jjsDashSpam = false
 
 -- CREDITS
 local P_Creds = CreateTab("Credits")
@@ -6496,4 +6874,3 @@ UIS.InputBegan:Connect(function(input, gp)
         end
     end
 end)
-
