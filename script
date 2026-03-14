@@ -6110,16 +6110,65 @@ Section(P_Fisch, "Rod Shop")
 
 -- Rod Dropdown
 local rods = {
-    "Basic Rod", "Graphite Rod", "Carbon Rod", "Advanced Rod", "Mythical Rod"
+    "Abyssal Specter Rod", "Adventurer's Rod", "Anchor n' Chain", "Antler Rod", "Arctic Rod",
+    "Astraeus Serenade", "Astral Rod", "Astralhook Rod", "Auric Rod", "Aurora Rod",
+    "Avalanche Rod", "Axe of Rhoads", "Azure Of Lagoon",
+    "Bat Whisperer Rod", "Blade Of Glorp", "Blazebringer Rod", "Bloomspire",
+    "Bloomspire: Blooming Splendor", "Bloomspire: Slumbering Elegance", "Bloomspire: Twisted Toxins",
+    "Bone Blade", "Boreal Rod", "Brick Built Rod", "Brick Rod", "Brine-Infused Rod",
+    "Brother's Rod", "Buddy Bond Rod",
+    "Candy Cane Rod", "Carbon Rod", "Carrot Rod", "Celestial Rod", "Cerebra",
+    "Cerulean Fang Rod", "Challenger's Rod", "Champions Rod", "Christmas Tree Rod", "Chrysalis",
+    "Cinder Block Rod", "Cinderstring", "Clickbait Caster", "Coral Rod", "Cornucopia Rod",
+    "Cryolash", "Crystalized Rod", "Cupid's Bow", "Cupid's Embrace",
+    "Dave Rod", "Daybreaker Rod", "Dead Man's Rod", "Decayed Rod", "Demon-Slayer",
+    "Depthseeker Rod", "Destiny Rod", "Dreambreaker", "Dusekkar Rod", "Duskwire",
+    "Eardrum", "Egg Rod", "Eidolon Rod", "Elder Mossripper", "Electric Guitar",
+    "Ethereal Prism Rod", "Event Horizon Rod", "Evil Pitchfork", "Experimental Rod",
+    "Fabulous Rod", "Fallen Rod", "Fallen Snowblade", "Fang of the Eclipse", "Fast Rod",
+    "Firefly Rod", "Firework Rod", "Fischer's Rod", "Fischmas Rod", "Fish Photographer",
+    "Fixer's Rod", "Flimsy Rod", "Fortune Rod", "Free Spirit Rod", "Friendly Rod",
+    "Frog Rod", "Frost Warden Rod", "Frostbane Rod", "Frostfire Rod", "Fungal Rod",
+    "Gardenkeeper Rod", "Gingerbread Rod", "Great Dreamer Rod", "Great Rod of Oscar",
+    "Haunted Rod", "Heaven's Rod",
+    "Ice Warpers Rod", "Igneous Rupturer",
+    "Jack-o-Blazer", "Jinglestar Rod",
+    "Katana Rod", "Kings Rod", "Kraken Rod", "Krampus's Rod",
+    "Leviathan's Fang Rod", "Lobster Rod", "Long Rod", "Lucid Rod", "Lucky Rod", "Luminescent Oath",
+    "Maelstrom", "Magma Rod", "Magnet Rod", "Masterline Rod", "Merchant Rod", "Merlin's Staff",
+    "Microphone Rod", "Midas Rod", "Mission Specialist's Rod", "Mythical Rod",
+    "Nates Blade", "Necrotic Rod", "New Years Rod", "Nico's Yarncaster", "NilCaster",
+    "No-Life Rod", "Noctone", "Nocturnal Rod", "North Pole", "North-Star Rod",
+    "Onirifalx", "Original No-Life Rod",
+    "Paintbrush", "Paleontologist's Rod", "Paper Fan Rod", "Patriot Rod", "Pen Rod",
+    "Peppermint Rod", "Phoenix Rod", "Pinion's Aria", "Plaguereaver", "Plastic Rod",
+    "Polaris Serenade", "Popsicle Rod", "Poseidon Rod", "Precision Rod",
+    "Rainbow Cluster Rod", "Random Rod", "Rapid Rod", "Reinforced Rod", "Relic Rod",
+    "Requiem", "Resourceful Rod", "Riptide Rod", "Rod of the Cosmos", "Rod Of The Depths",
+    "Rod Of The Eternal King", "Rod Of The Exalted One", "Rod Of The Forgotten Fang",
+    "Rod Of The Zenith", "Rod Of Time", "Rose Rend", "Rose Rod", "Ruinous Oath",
+    "Sanguine Spire", "Santa's Miracle Rod", "Scarlet Ravager", "Scarlet Spincaster Rod",
+    "Scurvy Rod", "Seasons Rod", "Seraphic Rod", "Shamrock Rod", "Silly Fun Happy Rod",
+    "Smurf Rod", "Sovereign Doombringer", "Spiritbinder", "Spooky Rod", "Steady Rod",
+    "Stone Hammer", "Stone Rod", "Summit Rod", "Sunken Rod", "Superstar Rod",
+    "Sweet-Stinger", "Sword of Darkness",
+    "Tempest Rod", "Test Rod", "Thalassar's Ruin", "The Boom Ball", "The Lost Rod",
+    "Tidal Wave Rod", "Tidemourner", "Toxic Spire Rod", "Toxinburst Rod", "Training Rod",
+    "Tranquility Rod", "Treasure Rod", "Trident Rod", "Tryhard Rod",
+    "Upside-Down Rod",
+    "Verdant Oath", "Verdant Shear Rod", "View Smasher", "Vinefang Rod", "Vineweaver Rod",
+    "Volcanic Rod", "Voyager Rod",
+    "Wicked Fang Rod", "Wildflower Rod", "Wind Elemental", "Wingripper", "Wisdom Rod",
+    "Zeus Rod"
 }
 
-local selectedRod = "Basic Rod"
+local selectedRod = "Abyssal Specter Rod"
 
 local rodDropdownOpen = false
 local rodDropdownFrame
 
 local rodDropdown = Library:Create("TextButton", {
-    Text = "Selected Rod: Basic Rod",
+    Text = "Selected Rod: Abyssal Specter Rod",
     Font = Enum.Font.GothamSemibold, TextSize = 14,
     TextColor3 = Theme.Text, Size = UDim2.new(0.98,0,0,40),
     BackgroundColor3 = Theme.DarkPanel, Parent = P_Fisch
@@ -6163,21 +6212,8 @@ end)
 Button(P_Fisch, "Buy Selected Rod", Theme.Accent, function()
     local buyRemote = ReplicatedStorage.packages.Net.RE.Monetization.BuyProduct
     if buyRemote then
-        -- Map rod names to product IDs (update with real IDs from spying)
-        local rodIds = {
-            ["Basic Rod"] = "basic_rod", -- placeholder
-            ["Graphite Rod"] = "graphite_rod",
-            ["Carbon Rod"] = "carbon_rod",
-            ["Advanced Rod"] = "advanced_rod",
-            ["Mythical Rod"] = "mythical_rod"
-        }
-        local id = rodIds[selectedRod]
-        if id then
-            buyRemote:FireServer(id)
-            Library:Notify("Fisch", "Attempting to buy " .. selectedRod, 2)
-        else
-            Library:Notify("Fisch", "Rod ID not found for " .. selectedRod, 2)
-        end
+        buyRemote:FireServer(selectedRod)
+        Library:Notify("Fisch", "Attempting to buy " .. selectedRod, 2)
     else
         Library:Notify("Fisch", "Buy remote not found", 2)
     end
