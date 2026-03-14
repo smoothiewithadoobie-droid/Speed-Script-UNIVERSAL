@@ -1324,7 +1324,164 @@ Button(P_Remotes, "Copy All Paths", nil, function()
     Library:Notify("Remotes", "Copied "..#remoteLog.." paths", 2)
 end)
 
--- BLOXFRUITS
+-- BACKDOOR SCANNER TAB (styled to match your GUI)
+local P_Backdoor = CreateTab("Backdoor Scan")
+
+Section(P_Backdoor, "Backdoor Scanner (Client-Visible Scripts Only)")
+
+Library:Create("TextLabel", {
+    Text = "Scans for common backdoor patterns in accessible scripts.\nCannot see ServerScriptService/ServerStorage.\nMost real backdoors use require(large AssetId).",
+    Font = Enum.Font.Gotham, TextSize = 11, TextColor3 = Theme.TextDim,
+    Size = UDim2.new(0.98,0,0,50), BackgroundTransparency = 1,
+    TextWrapped = true, TextXAlignment = Enum.TextXAlignment.Left,
+    Parent = P_Backdoor
+})
+
+local scanResults = {}
+local resultRows = {}
+
+local resultsOuter = Library:Create("Frame", {
+    Size = UDim2.new(0.98,0,0,220), BackgroundColor3 = Theme.DarkPanel, Parent = P_Backdoor
+}, {Library:MakeCorner(6)})
+Library:AddSwirlingStroke(resultsOuter, 1)
+
+local resultsScroll = Library:Create("ScrollingFrame", {
+    Size = UDim2.new(1,-10,1,-10), Position = UDim2.fromOffset(5,5),
+    BackgroundTransparency = 1, ScrollBarThickness = 2,
+    ScrollBarImageColor3 = Theme.Accent,
+    CanvasSize = UDim2.new(0,0,0,0), AutomaticCanvasSize = Enum.AutomaticSize.Y,
+    Parent = resultsOuter
+})
+Library:Create("UIListLayout", {Padding = UDim.new(0,4), Parent = resultsScroll})
+
+local statusLabel = Library:Create("TextLabel", {
+    Text = "Ready to scan — no results yet",
+    Font = Enum.Font.Code, TextSize = 12,
+    TextColor3 = Theme.TextDim, Size = UDim2.new(0.98,0,0,20),
+    BackgroundTransparency = 1, TextXAlignment = Enum.TextXAlignment.Left,
+    Parent = P_Backdoor
+})
+
+local function addResultRow(path, reason, riskLevel)
+    local color = riskLevel == "High" and Theme.Danger 
+        or riskLevel == "Medium" and Color3.fromRGB(255, 204, 0) 
+        or Theme.Success
+    
+    local row = Library:Create("Frame", {
+        Size = UDim2.new(1,-4,0,50), BackgroundColor3 = Color3.fromRGB(18,18,24), Parent = resultsScroll
+    }, {Library:MakeCorner(5)})
+    
+    Library:Create("TextLabel", {
+        Text = riskLevel, Font = Enum.Font.GothamBold, TextSize = 11,
+        TextColor3 = color, BackgroundColor3 = color:lerp(Color3.new(0,0,0), 0.6),
+        Size = UDim2.fromOffset(50,20), Position = UDim2.fromOffset(8,8),
+        TextXAlignment = Enum.TextXAlignment.Center, Parent = row
+    }, {Library:MakeCorner(4)})
+    
+    Library:Create("TextLabel", {
+        Text = path, Font = Enum.Font.Code, TextSize = 11,
+        TextColor3 = Theme.Text, BackgroundTransparency = 1,
+        Size = UDim2.new(1,-70,0,20), Position = UDim2.fromOffset(65,8),
+        TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd,
+        Parent = row
+    })
+    
+    Library:Create("TextLabel", {
+        Text = reason, Font = Enum.Font.Code, TextSize = 10,
+        TextColor3 = Theme.TextDim, BackgroundTransparency = 1,
+        Size = UDim2.new(1,-70,0,16), Position = UDim2.fromOffset(65,30),
+        TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd,
+        Parent = row
+    })
+    
+    local copyBtn = Library:Create("TextButton", {
+        Text = "Copy Path", Font = Enum.Font.GothamBold, TextSize = 11,
+        TextColor3 = Theme.Text, BackgroundColor3 = Theme.AccentDim,
+        Size = UDim2.fromOffset(80,24), Position = UDim2.new(1,-88,0.5,-12), Parent = row
+    }, {Library:MakeCorner(4)})
+    
+    copyBtn.MouseButton1Click:Connect(function()
+        setclipboard(path)
+        copyBtn.Text = "Copied!"
+        task.delay(1.5, function() if copyBtn and copyBtn.Parent then copyBtn.Text = "Copy Path" end end)
+    end)
+    
+    table.insert(resultRows, row)
+end
+
+local function clearResults()
+    for _, row in ipairs(resultRows) do 
+        if row and row.Parent then row:Destroy() end 
+    end
+    resultRows = {}
+    scanResults = {}
+    statusLabel.Text = "Scan cleared"
+end
+
+local function scanForBackdoors()
+    clearResults()
+    statusLabel.Text = "Scanning... (may take a few seconds)"
+    
+    local scanRoots = {
+        game.ReplicatedStorage,
+        game.Workspace,
+        player:FindFirstChild("PlayerGui"),
+        game.StarterGui,
+        game:GetService("StarterPlayer"),
+        game:GetService("Lighting"),
+        game:GetService("Teams"),
+    }
+    
+    local suspiciousCount = 0
+    
+    local function checkScript(obj)
+        if not (obj:IsA("Script") or obj:IsA("LocalScript") or obj:IsA("ModuleScript")) then return end
+        
+        local src = obj.Source
+        if src == "" or src == nil then return end
+        
+        local path = obj:GetFullName()
+        
+        -- Classic require(large AssetId) backdoor
+        if src:match("require%(%d%d%d%d%d%d%d?%d?%d?%)") then
+            suspiciousCount += 1
+            addResultRow(path, "require(large numeric AssetId) — classic backdoor pattern", "High")
+        end
+        
+        -- loadstring + HttpGet / request
+        local lowerSrc = src:lower()
+        if lowerSrc:find("loadstring") and (lowerSrc:find("httpget") or lowerSrc:find("request")) then
+            suspiciousCount += 1
+            addResultRow(path, "loadstring + remote code load (HttpGet/request)", "High")
+        end
+        
+        -- getfenv + require (evasion technique)
+        if src:find("getfenv") and src:find("require") then
+            suspiciousCount += 1
+            addResultRow(path, "getfenv + require combo — possible evasion", "Medium")
+        end
+    end
+    
+    for _, root in ipairs(scanRoots) do
+        if root then
+            for _, obj in ipairs(root:GetDescendants()) do
+                pcall(checkScript, obj)
+            end
+        end
+    end
+    
+    if suspiciousCount == 0 then
+        statusLabel.Text = "Scan complete — No obvious backdoors found"
+        Library:Notify("Backdoor Scan", "No suspicious patterns detected", 4)
+    else
+        statusLabel.Text = "Scan complete — Found " .. suspiciousCount .. " suspicious item" .. (suspiciousCount == 1 and "" or "s")
+        Library:Notify("Backdoor Scan", "Found " .. suspiciousCount .. " potential backdoors — check results", 5)
+    end
+end
+
+Button(P_Backdoor, "Scan Now", Theme.Accent, scanForBackdoors)
+Button(P_Backdoor, "Clear Results", Theme.Danger, clearResults)
+
 -- BLOX FRUITS TAB (styled to match your GUI)
 local P_BloxFruits = CreateTab("Blox Fruits")
 
